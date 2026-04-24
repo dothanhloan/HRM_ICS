@@ -55,8 +55,19 @@ def list_du_an(
 		conditions.append("(d.ten_du_an LIKE :q OR nv.ho_ten LIKE :q)")
 		params["q"] = f"%{q}%"
 	if trang_thai:
+		normalized = str(trang_thai).strip().lower()
+		status_map = {
+			"chua bat dau": "Chưa bắt đầu",
+			"chưa bắt đầu": "Chưa bắt đầu",
+			"dang thuc hien": "Đang thực hiện",
+			"đang thực hiện": "Đang thực hiện",
+			"da hoan thanh": "Đã hoàn thành",
+			"đã hoàn thành": "Đã hoàn thành",
+			"tre han": "Trễ hạn",
+			"trễ hạn": "Trễ hạn",
+		}
 		conditions.append("d.trang_thai_duan = :trang_thai")
-		params["trang_thai"] = trang_thai
+		params["trang_thai"] = status_map.get(normalized, trang_thai)
 
 	actor_value = (actor or "").lower()
 	if actor_value == "employee":

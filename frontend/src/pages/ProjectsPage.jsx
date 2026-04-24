@@ -16,6 +16,8 @@ function ProjectsPage({
 	projectForm,
 	projectEmployees,
 	projectEmployeesLoading,
+	projectDepartments,
+	projectDepartmentsLoading,
 	projectFormStatus,
 	projectDeleteTarget,
 	setProjectQuery,
@@ -32,6 +34,15 @@ function ProjectsPage({
 	confirmDeleteProject,
 	setProjectDeleteTarget,
 }) {
+	const projectGroupOptions = [
+		"Triển khai",
+		"Nâng cấp",
+		"Bảo trì",
+		"Nghiên cứu",
+		"Khác",
+	];
+	const priorityOptions = ["Thấp", "Trung bình", "Cao"];
+
 	useEffect(() => {
 		fetchProjects(1);
 	}, []);
@@ -55,9 +66,10 @@ function ProjectsPage({
 						onChange={(event) => setProjectStatusFilter(event.target.value)}
 					>
 						<option value="">Tất cả trạng thái</option>
-						<option value="Dang thuc hien">Đang thực hiện</option>
-						<option value="Hoan thanh">Hoàn thành</option>
-						<option value="Tam dung">Tạm dừng</option>
+						<option value="Chưa bắt đầu">Chưa bắt đầu</option>
+						<option value="Đang thực hiện">Đang thực hiện</option>
+						<option value="Đã hoàn thành">Đã hoàn thành</option>
+						<option value="Trễ hạn">Trễ hạn</option>
 					</select>
 					<button type="button" onClick={() => fetchProjects(1)}>
 						Tìm kiếm
@@ -100,7 +112,7 @@ function ProjectsPage({
 							</div>
 							<div className="form-group">
 								<label>Nhóm dự án</label>
-								<input
+								<select
 									value={projectForm.nhom_du_an}
 									onChange={(event) =>
 										setProjectForm({
@@ -108,11 +120,18 @@ function ProjectsPage({
 											nhom_du_an: event.target.value,
 										})
 									}
-								/>
+								>
+									<option value="">Chọn nhóm dự án</option>
+									{projectGroupOptions.map((item) => (
+										<option key={item} value={item}>
+											{item}
+										</option>
+									))}
+								</select>
 							</div>
 							<div className="form-group">
 								<label>Phòng ban</label>
-								<input
+								<select
 									value={projectForm.phong_ban}
 									onChange={(event) =>
 										setProjectForm({
@@ -120,11 +139,18 @@ function ProjectsPage({
 											phong_ban: event.target.value,
 										})
 									}
-								/>
+								>
+									<option value="">Chọn phòng ban</option>
+									{projectDepartments.map((department) => (
+										<option key={department.id} value={department.ten_phong}>
+											{department.ten_phong}
+										</option>
+									))}
+								</select>
 							</div>
 							<div className="form-group">
 								<label>Mức độ ưu tiên</label>
-								<input
+								<select
 									value={projectForm.muc_do_uu_tien}
 									onChange={(event) =>
 										setProjectForm({
@@ -132,7 +158,14 @@ function ProjectsPage({
 											muc_do_uu_tien: event.target.value,
 										})
 									}
-								/>
+								>
+									<option value="">Chọn mức độ</option>
+									{priorityOptions.map((item) => (
+										<option key={item} value={item}>
+											{item}
+										</option>
+									))}
+								</select>
 							</div>
 							<div className="form-group">
 								<label>Ngày bắt đầu *</label>
@@ -161,7 +194,7 @@ function ProjectsPage({
 								/>
 							</div>
 							<div className="form-group">
-								<label>Leader *</label>
+								<label>Trưởng dự án *</label>
 								<select
 									value={projectForm.lead_id}
 									onChange={(event) =>
@@ -171,7 +204,7 @@ function ProjectsPage({
 										})
 									}
 								>
-									<option value="">Chọn leader</option>
+									<option value="">Chọn trưởng dự án</option>
 									{projectEmployees.map((employee) => (
 										<option key={employee.id} value={employee.id}>
 											{employee.ho_ten} ({employee.email})
@@ -190,10 +223,10 @@ function ProjectsPage({
 										})
 									}
 								>
-									<option value="Dang thuc hien">Đang thực hiện</option>
-									<option value="Hoan thanh">Hoàn thành</option>
-									<option value="Tam dung">Tạm dừng</option>
-									<option value="Ngung hoat dong">Ngừng hoạt động</option>
+									<option value="Chưa bắt đầu">Chưa bắt đầu</option>
+									<option value="Đang thực hiện">Đang thực hiện</option>
+									<option value="Đã hoàn thành">Đã hoàn thành</option>
+									<option value="Trễ hạn">Trễ hạn</option>
 								</select>
 							</div>
 							<div className="form-group">
@@ -210,7 +243,9 @@ function ProjectsPage({
 								/>
 							</div>
 						</div>
-						{projectEmployeesLoading ? <p>Đang tải danh sách nhân viên...</p> : null}
+						{projectEmployeesLoading || projectDepartmentsLoading ? (
+							<p>Đang tải danh sách liên quan...</p>
+						) : null}
 						{projectFormStatus.message ? (
 							<div className={`alert ${projectFormStatus.type}`}>
 								{projectFormStatus.message}
@@ -245,7 +280,7 @@ function ProjectsPage({
 						<tr>
 							<th>ID</th>
 							<th>Tên dự án</th>
-							<th>Leader</th>
+								<th>Trưởng dự án</th>
 							<th>Số thành viên</th>
 							<th>Nhóm</th>
 							<th>Trạng thái</th>

@@ -83,7 +83,19 @@ def list_nhanvien(
 
     query = text(
         f"""
-        SELECT id, ho_ten, email, so_dien_thoai, phong_ban_id, chuc_vu, trang_thai_lam_viec
+        SELECT
+          id,
+          ho_ten,
+          email,
+          so_dien_thoai,
+          gioi_tinh,
+          ngay_sinh,
+          phong_ban_id,
+          chuc_vu,
+          ngay_vao_lam,
+          trang_thai_lam_viec,
+          vai_tro,
+          avatar_url
         FROM nhanvien
         {where_sql}
         ORDER BY id DESC

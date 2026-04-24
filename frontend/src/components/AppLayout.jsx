@@ -1,13 +1,13 @@
 import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import logo from "../assets/logo.jpg";
 
 function AppLayout({ user, menuItems, iconMap, onLogout }) {
 	return (
 		<div className="home-shell">
 			<aside className="home-sidebar">
 				<div className="sidebar-brand">
-					<span className="brand-badge">ICS</span>
-					<span>ICS</span>
+					<img className="brand-logo" src={logo} alt="ICS" />
 				</div>
 				<nav className="sidebar-menu">
 					{menuItems.map((item) => (

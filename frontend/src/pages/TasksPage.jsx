@@ -142,7 +142,7 @@ function TasksPage({
 								/>
 							</div>
 							<div className="form-group">
-								<label>Deadline *</label>
+								<label>Hạn chót *</label>
 								<input
 									type="date"
 									value={taskForm.han_hoan_thanh}
@@ -282,7 +282,7 @@ function TasksPage({
 							<th>Tên công việc</th>
 							<th>Dự án</th>
 							<th>Người nhận</th>
-							<th>Deadline</th>
+							<th>Hạn chót</th>
 							<th>Trạng thái</th>
 							<th>Thao tác</th>
 						</tr>

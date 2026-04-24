@@ -299,6 +299,37 @@ class NhanSuLichSu(Base):
         sa.Index("nguoi_thay_doi_id", 'nguoi_thay_doi_id'),
     )
 
+class Nhanvien(Base):
+    __tablename__ = "nhanvien"
+    id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
+    ho_ten = sa.Column('ho_ten', sa.String(100), nullable=False)
+    email = sa.Column('email', sa.String(100), nullable=False)
+    mat_khau = sa.Column('mat_khau', sa.String(255), nullable=False)
+    so_dien_thoai = sa.Column('so_dien_thoai', sa.String(20))
+    gioi_tinh = sa.Column('gioi_tinh', mysql.ENUM('Nam', 'Nữ', 'Khác'))
+    ngay_sinh = sa.Column('ngay_sinh', sa.Date)
+    phong_ban_id = sa.Column('phong_ban_id', sa.Integer)
+    chuc_vu = sa.Column('chuc_vu', sa.String(100))
+    luong_co_ban = sa.Column('luong_co_ban', sa.Numeric(12, 2), server_default=sa.text("'0.00'"))
+    trang_thai_lam_viec = sa.Column(
+        'trang_thai_lam_viec',
+        mysql.ENUM('Đang làm', 'Tạm nghỉ', 'Nghỉ việc'),
+        server_default=sa.text("'Đang làm'"),
+    )
+    vai_tro = sa.Column(
+        'vai_tro',
+        mysql.ENUM('Admin', 'Quản lý', 'Nhân viên'),
+        server_default=sa.text("'Nhân viên'"),
+    )
+    ngay_vao_lam = sa.Column('ngay_vao_lam', sa.Date)
+    avatar_url = sa.Column('avatar_url', sa.String(255))
+    ngay_tao = sa.Column('ngay_tao', mysql.TIMESTAMP(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"))
+    __table_args__ = (
+        sa.UniqueConstraint('email', name="email"),
+        sa.ForeignKeyConstraint(['phong_ban_id'], ['phong_ban.id'], name="nhanvien_ibfk_1", ondelete="SET NULL"),
+        sa.Index("phong_ban_id", 'phong_ban_id'),
+    )
+
 class NhanvienQuyen(Base):
     __tablename__ = "nhanvien_quyen"
     nhanvien_id = sa.Column('nhanvien_id', sa.Integer, primary_key=True, nullable=False)

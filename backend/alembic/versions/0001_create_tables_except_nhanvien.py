@@ -15,7 +15,13 @@ depends_on = None
 
 def upgrade() -> None:
     sql_path = Path(__file__).resolve().parents[1] / 'sql' / 'schema_only_no_nhanvien.sql'
-    op.execute(sql_path.read_text(encoding='utf-8'))
+    sql_text = sql_path.read_text(encoding='utf-8')
+    statements = [stmt.strip() for stmt in sql_text.split(';') if stmt.strip()]
+    for statement in statements:
+        lowered = statement.lower()
+        if lowered.startswith('create database') or lowered.startswith('use '):
+            continue
+        op.execute(statement)
 
 
 def downgrade() -> None:

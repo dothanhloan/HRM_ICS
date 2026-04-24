@@ -3,9 +3,11 @@ import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import "./styles/login.css";
 
 import AppLayout from "./components/AppLayout";
+import AttendancePage from "./pages/AttendancePage";
 import DashboardPage from "./pages/DashboardPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
 import EmployeesPage from "./pages/EmployeesPage";
+import LeavePage from "./pages/LeavePage";
 import LoginPage from "./pages/LoginPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import TasksPage from "./pages/TasksPage";
@@ -24,11 +26,36 @@ function App() {
 	const [employeeQuery, setEmployeeQuery] = useState("");
 	const [employeeStatus, setEmployeeStatus] = useState({ type: "", message: "" });
 	const [employeeLoading, setEmployeeLoading] = useState(false);
+	const [attendanceToday, setAttendanceToday] = useState(null);
+	const [attendanceHistory, setAttendanceHistory] = useState([]);
+	const [attendanceStatus, setAttendanceStatus] = useState({
+		type: "",
+		message: "",
+	});
+	const [attendanceLoading, setAttendanceLoading] = useState(false);
+	const [leaveRows, setLeaveRows] = useState([]);
+	const [leaveTotal, setLeaveTotal] = useState(0);
+	const [leavePage, setLeavePage] = useState(1);
+	const [leavePageSize, setLeavePageSize] = useState(10);
+	const [leaveTotalPages, setLeaveTotalPages] = useState(0);
+	const [leaveStatusFilter, setLeaveStatusFilter] = useState("cho_duyet");
+	const [leaveStatus, setLeaveStatus] = useState({ type: "", message: "" });
+	const [leaveLoading, setLeaveLoading] = useState(false);
+	const [leaveFormOpen, setLeaveFormOpen] = useState(false);
+	const [leaveForm, setLeaveForm] = useState({
+		loai_phep: "Phep nam",
+		ngay_bat_dau: "",
+		ngay_ket_thuc: "",
+		ly_do: "",
+		ghi_chu: "",
+	});
 	const [employeePage, setEmployeePage] = useState(1);
 	const [employeePageSize, setEmployeePageSize] = useState(10);
 	const [employeeTotalPages, setEmployeeTotalPages] = useState(0);
 	const [employeeFormOpen, setEmployeeFormOpen] = useState(false);
 	const [employeeEditingId, setEmployeeEditingId] = useState(null);
+	const [employeeDepartments, setEmployeeDepartments] = useState([]);
+	const [employeeDepartmentsLoading, setEmployeeDepartmentsLoading] = useState(false);
 	const [deleteTarget, setDeleteTarget] = useState(null);
 	const [projectRows, setProjectRows] = useState([]);
 	const [projectTotal, setProjectTotal] = useState(0);
@@ -44,6 +71,8 @@ function App() {
 	const [projectFormStatus, setProjectFormStatus] = useState({ type: "", message: "" });
 	const [projectEmployees, setProjectEmployees] = useState([]);
 	const [projectEmployeesLoading, setProjectEmployeesLoading] = useState(false);
+	const [projectDepartments, setProjectDepartments] = useState([]);
+	const [projectDepartmentsLoading, setProjectDepartmentsLoading] = useState(false);
 	const [projectDeleteTarget, setProjectDeleteTarget] = useState(null);
 	const [taskRows, setTaskRows] = useState([]);
 	const [taskTotal, setTaskTotal] = useState(0);
@@ -87,6 +116,13 @@ function App() {
 	const [departmentPage, setDepartmentPage] = useState(1);
 	const [departmentPageSize, setDepartmentPageSize] = useState(10);
 	const [departmentTotalPages, setDepartmentTotalPages] = useState(0);
+	const [departmentFormOpen, setDepartmentFormOpen] = useState(false);
+	const [departmentEditingId, setDepartmentEditingId] = useState(null);
+	const [departmentForm, setDepartmentForm] = useState({
+		ten_phong: "",
+	});
+	const [departmentActionTarget, setDepartmentActionTarget] = useState(null);
+	const [departmentTransferId, setDepartmentTransferId] = useState("");
 	const [projectForm, setProjectForm] = useState({
 		ten_du_an: "",
 		mo_ta: "",
@@ -96,7 +132,7 @@ function App() {
 		nhom_du_an: "",
 		phong_ban: "",
 		muc_do_uu_tien: "",
-		trang_thai_duan: "Dang thuc hien",
+		trang_thai_duan: "Đang thực hiện",
 	});
 	const [employeeForm, setEmployeeForm] = useState({
 		ho_ten: "",
@@ -108,8 +144,8 @@ function App() {
 		phong_ban_id: "",
 		chuc_vu: "",
 		luong_co_ban: "",
-		trang_thai_lam_viec: "Dang lam",
-		vai_tro: "Nhan vien",
+		trang_thai_lam_viec: "Đang làm",
+		vai_tro: "Nhân viên",
 		ngay_vao_lam: "",
 		avatar_url: "",
 	});
@@ -162,8 +198,27 @@ function App() {
 		setEmployeeStatus({ type: "", message: "" });
 		setEmployeePage(1);
 		setEmployeeTotalPages(0);
+		setAttendanceToday(null);
+		setAttendanceHistory([]);
+		setAttendanceStatus({ type: "", message: "" });
+		setLeaveRows([]);
+		setLeaveTotal(0);
+		setLeavePage(1);
+		setLeavePageSize(10);
+		setLeaveTotalPages(0);
+		setLeaveStatusFilter("cho_duyet");
+		setLeaveStatus({ type: "", message: "" });
+		setLeaveFormOpen(false);
+		setLeaveForm({
+			loai_phep: "Phep nam",
+			ngay_bat_dau: "",
+			ngay_ket_thuc: "",
+			ly_do: "",
+			ghi_chu: "",
+		});
 		setEmployeeFormOpen(false);
 		setEmployeeEditingId(null);
+		setEmployeeDepartments([]);
 		setDeleteTarget(null);
 		setProjectRows([]);
 		setProjectTotal(0);
@@ -176,6 +231,7 @@ function App() {
 		setProjectEditingId(null);
 		setProjectFormStatus({ type: "", message: "" });
 		setProjectEmployees([]);
+		setProjectDepartments([]);
 		setProjectDeleteTarget(null);
 		setTaskRows([]);
 		setTaskTotal(0);
@@ -199,7 +255,263 @@ function App() {
 		setDepartmentStatus({ type: "", message: "" });
 		setDepartmentPage(1);
 		setDepartmentTotalPages(0);
+		setDepartmentFormOpen(false);
+		setDepartmentEditingId(null);
+		setDepartmentForm({ ten_phong: "" });
+		setDepartmentActionTarget(null);
+		setDepartmentTransferId("");
 		navigate("/login");
+	};
+
+	const fetchAttendanceToday = async (nhanVienId) => {
+		if (!nhanVienId) {
+			return;
+		}
+		setAttendanceLoading(true);
+		setAttendanceStatus({ type: "", message: "" });
+		try {
+			const response = await fetch(
+				`${API_BASE}/api/v1/cham_cong/hom_nay?nhan_vien_id=${nhanVienId}`
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai du lieu cham cong");
+			}
+			setAttendanceToday(data.data || null);
+		} catch (error) {
+			setAttendanceStatus({ type: "error", message: error.message });
+		} finally {
+			setAttendanceLoading(false);
+		}
+	};
+
+	const fetchAttendanceHistory = async (nhanVienId, page = 1, pageSize = 7) => {
+		if (!nhanVienId) {
+			return;
+		}
+		setAttendanceLoading(true);
+		setAttendanceStatus({ type: "", message: "" });
+		try {
+			const params = new URLSearchParams({
+				nhan_vien_id: String(nhanVienId),
+				page: String(page),
+				page_size: String(pageSize),
+			});
+			const response = await fetch(
+				`${API_BASE}/api/v1/cham_cong/lich_su?${params.toString()}`
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai lich su cham cong");
+			}
+			setAttendanceHistory(data.data || []);
+		} catch (error) {
+			setAttendanceStatus({ type: "error", message: error.message });
+		} finally {
+			setAttendanceLoading(false);
+		}
+	};
+
+	const submitCheckIn = async ({ nhan_vien_id, vi_tri, vi_do, kinh_do, bao_cao }) => {
+		setAttendanceStatus({ type: "", message: "" });
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/cham_cong/check_in`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					nhan_vien_id,
+					vi_tri,
+					vi_do,
+					kinh_do,
+					bao_cao,
+				}),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the check-in");
+			}
+			setAttendanceStatus({ type: "success", message: "Check-in thanh cong." });
+			await fetchAttendanceToday(nhan_vien_id);
+			await fetchAttendanceHistory(nhan_vien_id);
+		} catch (error) {
+			setAttendanceStatus({ type: "error", message: error.message });
+		}
+	};
+
+	const submitCheckOut = async ({ nhan_vien_id, vi_tri, vi_do, kinh_do, bao_cao }) => {
+		setAttendanceStatus({ type: "", message: "" });
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/cham_cong/check_out`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					nhan_vien_id,
+					vi_tri,
+					vi_do,
+					kinh_do,
+					bao_cao,
+				}),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the check-out");
+			}
+			setAttendanceStatus({ type: "success", message: "Check-out thanh cong." });
+			await fetchAttendanceToday(nhan_vien_id);
+			await fetchAttendanceHistory(nhan_vien_id);
+		} catch (error) {
+			setAttendanceStatus({ type: "error", message: error.message });
+		}
+	};
+
+	const resetLeaveForm = () => {
+		setLeaveForm({
+			loai_phep: "Phep nam",
+			ngay_bat_dau: "",
+			ngay_ket_thuc: "",
+			ly_do: "",
+			ghi_chu: "",
+		});
+	};
+
+	const fetchLeaveRequests = async (pageOverride) => {
+		if (!user?.id) {
+			return;
+		}
+		setLeaveLoading(true);
+		setLeaveStatus({ type: "", message: "" });
+		try {
+			const isAdminUser = (user?.vai_tro || "").toLowerCase().includes("admin");
+			const nextPage = pageOverride ?? leavePage;
+			const params = new URLSearchParams({
+				page: String(nextPage),
+				page_size: String(leavePageSize),
+				actor_id: String(user.id),
+			});
+			if (leaveStatusFilter) {
+				params.set("trang_thai", leaveStatusFilter);
+			}
+			if (!isAdminUser) {
+				params.set("nhan_vien_id", String(user.id));
+			}
+			const response = await fetch(
+				`${API_BASE}/api/v1/don_nghi_phep/danh_sach?${params.toString()}`
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai don nghi phep");
+			}
+			setLeaveRows(data.data || []);
+			setLeaveTotal(data.total || 0);
+			setLeaveTotalPages(data.total_pages || 0);
+			setLeavePage(data.page || nextPage);
+		} catch (error) {
+			setLeaveStatus({ type: "error", message: error.message });
+		} finally {
+			setLeaveLoading(false);
+		}
+	};
+
+	const submitLeaveForm = async () => {
+		if (!user?.id) {
+			return;
+		}
+		setLeaveStatus({ type: "", message: "" });
+		if (
+			!leaveForm.loai_phep.trim() ||
+			!leaveForm.ngay_bat_dau ||
+			!leaveForm.ngay_ket_thuc ||
+			!leaveForm.ly_do.trim()
+		) {
+			setLeaveStatus({ type: "error", message: "Vui long nhap day du thong tin." });
+			return;
+		}
+
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/don_nghi_phep/gui_don`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					nhan_vien_id: user.id,
+					nguoi_tao_id: user.id,
+					loai_phep: leaveForm.loai_phep,
+					ngay_bat_dau: leaveForm.ngay_bat_dau,
+					ngay_ket_thuc: leaveForm.ngay_ket_thuc,
+					ly_do: leaveForm.ly_do,
+					ghi_chu: leaveForm.ghi_chu || undefined,
+				}),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the gui don nghi phep");
+			}
+			setLeaveStatus({ type: "success", message: "Gui don nghi phep thanh cong." });
+			setLeaveFormOpen(false);
+			resetLeaveForm();
+			fetchLeaveRequests(1);
+		} catch (error) {
+			setLeaveStatus({ type: "error", message: error.message });
+		}
+	};
+
+	const approveLeaveRequest = async (donId) => {
+		if (!user?.id) {
+			return;
+		}
+		setLeaveStatus({ type: "", message: "" });
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/don_nghi_phep/${donId}/duyet`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					nguoi_duyet_id: user.id,
+					action: "duyet",
+				}),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the duyet don nghi phep");
+			}
+			setLeaveStatus({ type: "success", message: "Da duyet don nghi phep." });
+			fetchLeaveRequests(leavePage);
+		} catch (error) {
+			setLeaveStatus({ type: "error", message: error.message });
+		}
+	};
+
+	const rejectLeaveRequest = async (donId, reason) => {
+		if (!user?.id) {
+			return;
+		}
+		if (!reason || !reason.trim()) {
+			setLeaveStatus({ type: "error", message: "Vui long nhap ly do tu choi." });
+			return;
+		}
+		setLeaveStatus({ type: "", message: "" });
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/don_nghi_phep/${donId}/duyet`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					nguoi_duyet_id: user.id,
+					action: "tu_choi",
+					ly_do_tu_choi: reason,
+				}),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tu choi don nghi phep");
+			}
+			setLeaveStatus({ type: "success", message: "Da tu choi don nghi phep." });
+			fetchLeaveRequests(leavePage);
+		} catch (error) {
+			setLeaveStatus({ type: "error", message: error.message });
+		}
+	};
+
+	const resetDepartmentForm = () => {
+		setDepartmentEditingId(null);
+		setDepartmentForm({ ten_phong: "" });
 	};
 
 	const resetEmployeeForm = () => {
@@ -214,20 +526,43 @@ function App() {
 			phong_ban_id: "",
 			chuc_vu: "",
 			luong_co_ban: "",
-			trang_thai_lam_viec: "Dang lam",
-			vai_tro: "Nhan vien",
+			trang_thai_lam_viec: "Đang làm",
+			vai_tro: "Nhân viên",
 			ngay_vao_lam: "",
 			avatar_url: "",
 		});
 	};
 
+	const fetchEmployeeDepartments = async () => {
+		if (employeeDepartments.length > 0) {
+			return;
+		}
+		setEmployeeDepartmentsLoading(true);
+		try {
+			const response = await fetch(
+				`${API_BASE}/api/v1/phong_ban/danh_sach?page=1&page_size=200`
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai danh sach phong ban");
+			}
+			setEmployeeDepartments(data.data || []);
+		} catch (error) {
+			setEmployeeStatus({ type: "error", message: error.message });
+		} finally {
+			setEmployeeDepartmentsLoading(false);
+		}
+	};
+
 	const openCreateEmployee = () => {
 		resetEmployeeForm();
+		fetchEmployeeDepartments();
 		setEmployeeFormOpen(true);
 	};
 
 	const openEditEmployee = (row) => {
 		setEmployeeEditingId(row.id);
+		fetchEmployeeDepartments();
 		setEmployeeForm({
 			ho_ten: row.ho_ten || "",
 			email: row.email || "",
@@ -238,8 +573,8 @@ function App() {
 			phong_ban_id: row.phong_ban_id ?? "",
 			chuc_vu: row.chuc_vu || "",
 			luong_co_ban: row.luong_co_ban ?? "",
-			trang_thai_lam_viec: row.trang_thai_lam_viec || "Dang lam",
-			vai_tro: row.vai_tro || "Nhan vien",
+			trang_thai_lam_viec: row.trang_thai_lam_viec || "Đang làm",
+			vai_tro: row.vai_tro || "Nhân viên",
 			ngay_vao_lam: row.ngay_vao_lam || "",
 			avatar_url: row.avatar_url || "",
 		});
@@ -452,6 +787,105 @@ function App() {
 		}
 	};
 
+	const openCreateDepartment = () => {
+		resetDepartmentForm();
+		setDepartmentFormOpen(true);
+	};
+
+	const openEditDepartment = (row) => {
+		setDepartmentEditingId(row.id);
+		setDepartmentForm({
+			ten_phong: row.ten_phong || "",
+		});
+		setDepartmentFormOpen(true);
+	};
+
+	const closeDepartmentAction = () => {
+		setDepartmentFormOpen(false);
+		resetDepartmentForm();
+		setDepartmentActionTarget(null);
+		setDepartmentTransferId("");
+	};
+
+	const submitDepartmentForm = async () => {
+		setDepartmentStatus({ type: "", message: "" });
+		if (!departmentForm.ten_phong.trim()) {
+			setDepartmentStatus({ type: "error", message: "Vui lòng nhập tên phòng ban." });
+			return;
+		}
+
+		const payload = {
+			ten_phong: departmentForm.ten_phong.trim(),
+		};
+
+		try {
+			const endpoint = departmentEditingId
+				? `${API_BASE}/api/v1/phong_ban/${departmentEditingId}/cap_nhat`
+				: `${API_BASE}/api/v1/phong_ban/tao_moi`;
+			const method = departmentEditingId ? "PUT" : "POST";
+			const response = await fetch(endpoint, {
+				method,
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			const data = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				throw new Error(data.detail || "Không thể lưu phòng ban.");
+			}
+			setDepartmentFormOpen(false);
+			resetDepartmentForm();
+			fetchDepartments(1);
+			setDepartmentStatus({ type: "success", message: "Lưu phòng ban thành công." });
+		} catch (error) {
+			setDepartmentStatus({ type: "error", message: error.message });
+		}
+	};
+
+	const requestDepartmentAction = (row) => {
+		setDepartmentActionTarget(row);
+		setDepartmentTransferId("");
+	};
+
+	const confirmDepartmentAction = async () => {
+		if (!departmentActionTarget) {
+			return;
+		}
+		const hasEmployees = (departmentActionTarget.so_nhan_vien || 0) > 0;
+		if (hasEmployees) {
+			if (!departmentTransferId) {
+				setDepartmentStatus({
+					type: "error",
+					message: "Vui lòng chọn phòng ban chuyển đến.",
+				});
+				return;
+			}
+		}
+
+		try {
+			const endpoint = `${API_BASE}/api/v1/phong_ban/${departmentActionTarget.id}/xoa`;
+			const method = "DELETE";
+
+			const payload = departmentTransferId
+				? { transfer_id: Number(departmentTransferId) }
+				: undefined;
+			const response = await fetch(endpoint, {
+				method,
+				headers: payload ? { "Content-Type": "application/json" } : undefined,
+				body: payload ? JSON.stringify(payload) : undefined,
+			});
+			const data = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				const message = data.detail?.message || data.detail || "Không thể thực hiện thao tác.";
+				throw new Error(message);
+			}
+			closeDepartmentAction();
+			fetchDepartments(departmentPage);
+			setDepartmentStatus({ type: "success", message: "Xóa phòng ban thành công." });
+		} catch (error) {
+			setDepartmentStatus({ type: "error", message: error.message });
+		}
+	};
+
 	const resetTaskForm = () => {
 		setTaskFormStatus({ type: "", message: "" });
 		setTaskAssignees([]);
@@ -628,7 +1062,7 @@ function App() {
 			nhom_du_an: "",
 			phong_ban: "",
 			muc_do_uu_tien: "",
-			trang_thai_duan: "Dang thuc hien",
+			trang_thai_duan: "Đang thực hiện",
 		});
 	};
 
@@ -651,15 +1085,38 @@ function App() {
 		}
 	};
 
+	const fetchProjectDepartments = async () => {
+		if (projectDepartments.length > 0) {
+			return;
+		}
+		setProjectDepartmentsLoading(true);
+		try {
+			const response = await fetch(
+				`${API_BASE}/api/v1/phong_ban/danh_sach?page=1&page_size=200`
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai danh sach phong ban");
+			}
+			setProjectDepartments(data.data || []);
+		} catch (error) {
+			setProjectFormStatus({ type: "error", message: error.message });
+		} finally {
+			setProjectDepartmentsLoading(false);
+		}
+	};
+
 	const openCreateProject = () => {
 		resetProjectForm();
 		fetchProjectEmployees();
+		fetchProjectDepartments();
 		setProjectFormOpen(true);
 	};
 
 	const openEditProject = async (row) => {
 		setProjectFormStatus({ type: "", message: "" });
 		fetchProjectEmployees();
+		fetchProjectDepartments();
 		try {
 			const response = await fetch(`${API_BASE}/api/v1/du_an/${row.id}/chi_tiet`);
 			const data = await response.json();
@@ -676,7 +1133,7 @@ function App() {
 				nhom_du_an: data.nhom_du_an || "",
 				phong_ban: data.phong_ban || "",
 				muc_do_uu_tien: data.muc_do_uu_tien || "",
-				trang_thai_duan: data.trang_thai_duan || "Dang thuc hien",
+				trang_thai_duan: data.trang_thai_duan || "Đang thực hiện",
 			});
 			setProjectFormOpen(true);
 		} catch (error) {
@@ -770,28 +1227,24 @@ function App() {
 	};
 
 	const menuItems = [
-		{ label: "Dashboard", icon: "chart", to: "/dashboard" },
-		{ label: "Du an", icon: "project", to: "/projects" },
-		{ label: "Cong viec", icon: "task", to: "/tasks" },
-		{ label: "Phong ban", icon: "office", to: "/departments" },
-		{ label: "Cham cong", icon: "calendar", to: "/dashboard" },
-		{ label: "Nghi phep", icon: "leave", to: "/dashboard" },
-		{ label: "Lich trinh", icon: "schedule", to: "/dashboard" },
-		{ label: "Luong & KPI", icon: "salary", to: "/dashboard" },
-		{ label: "Thu vien tai lieu", icon: "library", to: "/dashboard" },
+		{ label: "Bảng điều khiển", icon: "chart", to: "/dashboard" },
+		{ label: "Dự án", icon: "project", to: "/projects" },
+		{ label: "Công việc", icon: "task", to: "/tasks" },
+		{ label: "Phòng ban", icon: "office", to: "/departments" },
+		{ label: "Chấm công", icon: "calendar", to: "/attendance" },
+		{ label: "Nghỉ phép", icon: "leave", to: "/leave" },
+		{ label: "Lương & KPI", icon: "salary", to: "/dashboard" },
 	];
 
 	const adminMenuItems = [
 		{ label: "Dashboard", icon: "chart", to: "/dashboard" },
-		{ label: "Nhan su", icon: "people", to: "/employees" },
-		{ label: "Du an", icon: "project", to: "/projects" },
-		{ label: "Cong viec", icon: "task", to: "/tasks" },
-		{ label: "Phong ban", icon: "office", to: "/departments" },
-		{ label: "Cham cong", icon: "calendar", to: "/dashboard" },
-		{ label: "Nghi phep", icon: "leave", to: "/dashboard" },
-		{ label: "Lich trinh", icon: "schedule", to: "/dashboard" },
-		{ label: "Bao cao", icon: "report", to: "/dashboard" },
-		{ label: "Thu vien tai lieu", icon: "library", to: "/dashboard" },
+		{ label: "Nhân sự", icon: "people", to: "/employees" },
+		{ label: "Dự án", icon: "project", to: "/projects" },
+		{ label: "Công việc", icon: "task", to: "/tasks" },
+		{ label: "Phòng ban", icon: "office", to: "/departments" },
+		{ label: "Chấm công", icon: "calendar", to: "/attendance" },
+		{ label: "Nghỉ phép", icon: "leave", to: "/leave" },
+		{ label: "Lương & KPI", icon: "salary", to: "/dashboard" },
 	];
 
 	const iconMap = {
@@ -889,7 +1342,47 @@ function App() {
 				}
 			>
 				<Route path="/" element={<Navigate to="/dashboard" replace />} />
-				<Route path="/dashboard" element={<DashboardPage />} />
+				<Route path="/dashboard" element={<DashboardPage user={user} isAdmin={isAdmin} />} />
+				<Route
+					path="/attendance"
+					element={
+						<AttendancePage
+							user={user}
+							attendanceToday={attendanceToday}
+							attendanceHistory={attendanceHistory}
+							attendanceStatus={attendanceStatus}
+							attendanceLoading={attendanceLoading}
+							fetchAttendanceToday={fetchAttendanceToday}
+							fetchAttendanceHistory={fetchAttendanceHistory}
+							submitCheckIn={submitCheckIn}
+							submitCheckOut={submitCheckOut}
+						/>
+					}
+				/>
+				<Route
+					path="/leave"
+					element={
+						<LeavePage
+							user={user}
+							isAdmin={isAdmin}
+							leaveRows={leaveRows}
+							leaveTotal={leaveTotal}
+							leaveStatusFilter={leaveStatusFilter}
+							leaveStatus={leaveStatus}
+							leaveLoading={leaveLoading}
+							leaveFormOpen={leaveFormOpen}
+							leaveForm={leaveForm}
+							setLeaveFormOpen={setLeaveFormOpen}
+							setLeaveForm={setLeaveForm}
+							setLeaveStatusFilter={setLeaveStatusFilter}
+							resetLeaveForm={resetLeaveForm}
+							fetchLeaveRequests={fetchLeaveRequests}
+							submitLeaveForm={submitLeaveForm}
+							approveLeaveRequest={approveLeaveRequest}
+							rejectLeaveRequest={rejectLeaveRequest}
+						/>
+					}
+				/>
 				<Route
 					path="/projects"
 					element={
@@ -909,6 +1402,8 @@ function App() {
 							projectForm={projectForm}
 							projectEmployees={projectEmployees}
 							projectEmployeesLoading={projectEmployeesLoading}
+							projectDepartments={projectDepartments}
+							projectDepartmentsLoading={projectDepartmentsLoading}
 							projectFormStatus={projectFormStatus}
 							projectDeleteTarget={projectDeleteTarget}
 							setProjectQuery={setProjectQuery}
@@ -984,9 +1479,22 @@ function App() {
 							departmentPage={departmentPage}
 							departmentPageSize={departmentPageSize}
 							departmentTotalPages={departmentTotalPages}
+							departmentFormOpen={departmentFormOpen}
+							departmentEditingId={departmentEditingId}
+							departmentForm={departmentForm}
+							departmentActionTarget={departmentActionTarget}
+							departmentTransferId={departmentTransferId}
 							setDepartmentQuery={setDepartmentQuery}
 							setDepartmentPageSize={setDepartmentPageSize}
+							setDepartmentForm={setDepartmentForm}
+							setDepartmentTransferId={setDepartmentTransferId}
 							fetchDepartments={fetchDepartments}
+							openCreateDepartment={openCreateDepartment}
+							openEditDepartment={openEditDepartment}
+							submitDepartmentForm={submitDepartmentForm}
+							requestDepartmentAction={requestDepartmentAction}
+							confirmDepartmentAction={confirmDepartmentAction}
+							closeDepartmentAction={closeDepartmentAction}
 						/>
 					}
 				/>
@@ -1006,13 +1514,17 @@ function App() {
 								employeeFormOpen={employeeFormOpen}
 								employeeEditingId={employeeEditingId}
 								employeeForm={employeeForm}
+								employeeDepartments={employeeDepartments}
+								employeeDepartmentsLoading={employeeDepartmentsLoading}
 								deleteTarget={deleteTarget}
 								setEmployeeQuery={setEmployeeQuery}
 								setEmployeeFormOpen={setEmployeeFormOpen}
 								setEmployeeForm={setEmployeeForm}
+								setEmployeeEditingId={setEmployeeEditingId}
 								setEmployeePageSize={setEmployeePageSize}
 								resetEmployeeForm={resetEmployeeForm}
 								fetchEmployees={fetchEmployees}
+								fetchEmployeeDepartments={fetchEmployeeDepartments}
 								openCreateEmployee={openCreateEmployee}
 								openEditEmployee={openEditEmployee}
 								submitEmployeeForm={submitEmployeeForm}
