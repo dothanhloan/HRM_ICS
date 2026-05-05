@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 function ProjectsPage({
 	isAdmin,
@@ -47,40 +47,128 @@ function ProjectsPage({
 		fetchProjects(1);
 	}, []);
 
+	const [projectView, setProjectView] = useState("card");
+
+	const statusCounts = useMemo(() => {
+		const normalize = (value) =>
+			String(value || "")
+				.toLowerCase()
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "");
+		return projectRows.reduce(
+			(acc, row) => {
+				const status = normalize(row.trang_thai_duan);
+				if (status.includes("dang thuc hien")) {
+					acc.inProgress += 1;
+				} else if (status.includes("da hoan thanh")) {
+					acc.completed += 1;
+				} else if (status.includes("tre han")) {
+					acc.overdue += 1;
+				} else if (status.includes("chua bat dau")) {
+					acc.notStarted += 1;
+				}
+				return acc;
+			},
+			{ inProgress: 0, completed: 0, overdue: 0, notStarted: 0 }
+		);
+	}, [projectRows]);
+
+	const statusClassMap = useMemo(
+		() => ({
+			"Chưa bắt đầu": "status-notstarted",
+			"Chua bat dau": "status-notstarted",
+			"Đang thực hiện": "status-inprogress",
+			"Dang thuc hien": "status-inprogress",
+			"Đã hoàn thành": "status-complete",
+			"Da hoan thanh": "status-complete",
+			"Trễ hạn": "status-overdue",
+			"Tre han": "status-overdue",
+		}),
+		[]
+	);
+
 	return (
-		<section className="admin-section">
-			<div className="admin-section-header">
-				<div>
-					<h2>Danh sách dự án</h2>
-					<p>Tổng số: {projectTotal} dự án</p>
-				</div>
-				<div className="admin-actions">
-					<input
-						type="search"
-						placeholder="Tìm theo tên dự án hoặc leader"
-						value={projectQuery}
-						onChange={(event) => setProjectQuery(event.target.value)}
-					/>
-					<select
-						value={projectStatusFilter}
-						onChange={(event) => setProjectStatusFilter(event.target.value)}
-					>
-						<option value="">Tất cả trạng thái</option>
-						<option value="Chưa bắt đầu">Chưa bắt đầu</option>
-						<option value="Đang thực hiện">Đang thực hiện</option>
-						<option value="Đã hoàn thành">Đã hoàn thành</option>
-						<option value="Trễ hạn">Trễ hạn</option>
-					</select>
-					<button type="button" onClick={() => fetchProjects(1)}>
-						Tìm kiếm
-					</button>
-					{isAdmin ? (
-						<button type="button" onClick={openCreateProject}>
-							Thêm mới dự án
-						</button>
-					) : null}
+		<section className="admin-section project-page">
+			<div className="project-hero">
+				<div className="project-hero-content">
+					<h2>Quản lý dự án</h2>
+					<p>Theo dõi tiến độ và ưu tiên dự án theo thời gian thực</p>
 				</div>
 			</div>
+
+			<div className="admin-section-header">
+				<div>
+					<h3>Danh sách dự án</h3>
+					<p>Tổng số: {projectTotal} dự án</p>
+				</div>
+				<div className="header-actions">
+					<div className="admin-actions">
+						<input
+							type="search"
+							placeholder="Tìm theo tên dự án hoặc leader"
+							value={projectQuery}
+							onChange={(event) => setProjectQuery(event.target.value)}
+						/>
+						<select
+							value={projectStatusFilter}
+							onChange={(event) => setProjectStatusFilter(event.target.value)}
+						>
+							<option value="">Tất cả trạng thái</option>
+							<option value="Chưa bắt đầu">Chưa bắt đầu</option>
+							<option value="Đang thực hiện">Đang thực hiện</option>
+							<option value="Đã hoàn thành">Đã hoàn thành</option>
+							<option value="Trễ hạn">Trễ hạn</option>
+						</select>
+						<button type="button" onClick={() => fetchProjects(1)}>
+							Tìm kiếm
+						</button>
+						{isAdmin ? (
+							<button type="button" onClick={openCreateProject}>
+								Thêm mới dự án
+							</button>
+						) : null}
+					</div>
+					<div className="view-tabs">
+						<button
+							type="button"
+							className={projectView === "card" ? "active" : ""}
+							onClick={() => setProjectView("card")}
+						>
+							Card
+						</button>
+						<button
+							type="button"
+							className={projectView === "table" ? "active" : ""}
+							onClick={() => setProjectView("table")}
+						>
+							Table
+						</button>
+					</div>
+				</div>
+			</div>
+			<div className="project-summary">
+				<div className="project-stat-card total">
+					<span>Tổng dự án</span>
+					<strong>{projectTotal}</strong>
+					<small>Đang hiển thị {projectRows.length} dự án</small>
+				</div>
+				<div className="project-stat-card active">
+					<span>Đang thực hiện</span>
+					<strong>{statusCounts.inProgress}</strong>
+					<small>Ưu tiên theo dõi</small>
+				</div>
+				<div className="project-stat-card done">
+					<span>Đã hoàn thành</span>
+					<strong>{statusCounts.completed}</strong>
+					<small>Đã nghiệm thu</small>
+				</div>
+				<div className="project-stat-card late">
+					<span>Trễ hạn</span>
+					<strong>{statusCounts.overdue}</strong>
+					<small>Cần xử lý</small>
+				</div>
+			</div>
+
 			{projectFormOpen ? (
 				<div className="modal-backdrop">
 					<div className="modal">
@@ -274,64 +362,145 @@ function ProjectsPage({
 					{projectStatus.message}
 				</div>
 			) : null}
-			<div className="admin-table">
-				<table>
-					<thead>
-						<tr>
-							<th>ID</th>
-							<th>Tên dự án</th>
+			{projectView === "card" ? (
+				<div className="project-card-grid">
+					{projectLoading ? (
+						<div className="project-empty">Đang tải dữ liệu...</div>
+					) : projectRows.length === 0 ? (
+						<div className="project-empty">Không có dữ liệu</div>
+					) : (
+						projectRows.map((row) => (
+							<div className="project-card" key={row.id}>
+								<div className="project-card-header">
+									<span className="data-emphasis">#{row.id}</span>
+									<span
+										className={`status-pill ${
+											statusClassMap[row.trang_thai_duan] || "status-muted"
+										}`}
+									>
+										{row.trang_thai_duan || "-"}
+									</span>
+								</div>
+								<h4>{row.ten_du_an}</h4>
+								<p className="project-card-meta">{row.nhom_du_an || "Chưa phân nhóm"}</p>
+								<div className="project-card-row">
+									<span>Trưởng dự án</span>
+									<strong>{row.lead_name || "-"}</strong>
+								</div>
+								<div className="project-card-row">
+									<span>Số thành viên</span>
+									<strong>{row.so_thanh_vien ?? 0}</strong>
+								</div>
+								<div className="project-card-dates">
+									<div>
+										<small>Ngày bắt đầu</small>
+										<span className="data-emphasis">{row.ngay_bat_dau || "-"}</span>
+									</div>
+									<div>
+										<small>Ngày kết thúc</small>
+										<span className="data-emphasis">{row.ngay_ket_thuc || "-"}</span>
+									</div>
+								</div>
+								{isAdmin ? (
+									<div className="row-actions">
+										<button type="button" onClick={() => openEditProject(row)}>
+											Sửa
+										</button>
+										<button
+											type="button"
+											className="ghost"
+											onClick={() => requestDeleteProject(row)}
+										>
+											Xóa
+										</button>
+									</div>
+								) : null}
+							</div>
+						))
+					)}
+				</div>
+			) : (
+				<div className="admin-table project-table">
+					<table>
+						<thead>
+							<tr>
+								<th>ID</th>
+								<th>Tên dự án</th>
 								<th>Trưởng dự án</th>
-							<th>Số thành viên</th>
-							<th>Nhóm</th>
-							<th>Trạng thái</th>
-							<th>Ngày bắt đầu</th>
-							<th>Ngày kết thúc</th>
-							{isAdmin ? <th>Thao tác</th> : null}
-						</tr>
-					</thead>
-					<tbody>
-						{projectLoading ? (
-							<tr>
-								<td colSpan={isAdmin ? 9 : 8}>Đang tải dữ liệu...</td>
+								<th>Số thành viên</th>
+								<th>Nhóm</th>
+								<th>Trạng thái</th>
+								<th>Ngày bắt đầu</th>
+								<th>Ngày kết thúc</th>
+								{isAdmin ? <th>Thao tác</th> : null}
 							</tr>
-						) : (
-							projectRows.map((row) => (
-								<tr key={row.id}>
-									<td>{row.id}</td>
-									<td>{row.ten_du_an}</td>
-									<td>{row.lead_name || "-"}</td>
-									<td>{row.so_thanh_vien ?? 0}</td>
-									<td>{row.nhom_du_an || "-"}</td>
-									<td>{row.trang_thai_duan || "-"}</td>
-									<td>{row.ngay_bat_dau || "-"}</td>
-									<td>{row.ngay_ket_thuc || "-"}</td>
-									{isAdmin ? (
-										<td>
-											<div className="row-actions">
-												<button type="button" onClick={() => openEditProject(row)}>
-													Sửa
-												</button>
-												<button
-													type="button"
-													className="ghost"
-													onClick={() => requestDeleteProject(row)}
-												>
-													Xóa
-												</button>
-											</div>
-										</td>
-									) : null}
+						</thead>
+						<tbody>
+							{projectLoading ? (
+								<tr>
+									<td colSpan={isAdmin ? 9 : 8}>Đang tải dữ liệu...</td>
 								</tr>
-							))
-						)}
-						{!projectLoading && projectRows.length === 0 ? (
-							<tr>
-								<td colSpan={isAdmin ? 9 : 8}>Không có dữ liệu</td>
-							</tr>
-						) : null}
-					</tbody>
-				</table>
-			</div>
+							) : (
+								projectRows.map((row) => (
+									<tr key={row.id}>
+										<td>
+											<span className="data-emphasis">{row.id}</span>
+										</td>
+										<td>
+											<span className="data-chip">{row.ten_du_an}</span>
+										</td>
+										<td>
+											<span className="data-chip muted">{row.lead_name || "-"}</span>
+										</td>
+										<td>
+											<span className="data-emphasis">{row.so_thanh_vien ?? 0}</span>
+										</td>
+										<td>
+											<span className="data-chip">{row.nhom_du_an || "-"}</span>
+										</td>
+										<td>
+											<span
+												className={`status-pill ${
+													statusClassMap[row.trang_thai_duan] || "status-muted"
+												}`}
+											>
+												{row.trang_thai_duan || "-"}
+											</span>
+										</td>
+										<td>
+											<span className="data-emphasis">{row.ngay_bat_dau || "-"}</span>
+										</td>
+										<td>
+											<span className="data-emphasis">{row.ngay_ket_thuc || "-"}</span>
+										</td>
+										{isAdmin ? (
+											<td>
+												<div className="row-actions">
+													<button type="button" onClick={() => openEditProject(row)}>
+														Sửa
+													</button>
+													<button
+														type="button"
+														className="ghost"
+														onClick={() => requestDeleteProject(row)}
+													>
+														Xóa
+													</button>
+												</div>
+											</td>
+										) : null}
+									</tr>
+								))
+							)}
+							{!projectLoading && projectRows.length === 0 ? (
+								<tr>
+									<td colSpan={isAdmin ? 9 : 8}>Không có dữ liệu</td>
+								</tr>
+							) : null}
+						</tbody>
+					</table>
+				</div>
+			)}
 			<div className="pagination">
 				<button
 					type="button"

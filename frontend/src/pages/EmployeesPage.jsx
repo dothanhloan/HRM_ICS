@@ -39,6 +39,40 @@ function EmployeesPage({
 		}, {});
 	}, [employeeDepartments]);
 
+	const statusCounts = useMemo(() => {
+		const normalize = (value) =>
+			String(value || "")
+				.toLowerCase()
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "");
+		return employeeRows.reduce(
+			(acc, row) => {
+				const status = normalize(row.trang_thai_lam_viec);
+				if (status.includes("dang lam")) {
+					acc.active += 1;
+				} else if (status.includes("tam nghi")) {
+					acc.paused += 1;
+				} else if (status.includes("nghi viec")) {
+					acc.left += 1;
+				}
+				return acc;
+			},
+			{ active: 0, paused: 0, left: 0 }
+		);
+	}, [employeeRows]);
+
+	const statusClassMap = useMemo(
+		() => ({
+			"Đang làm": "status-active",
+			"Dang lam": "status-active",
+			"Tạm nghỉ": "status-paused",
+			"Tam nghi": "status-paused",
+			"Nghỉ việc": "status-left",
+			"Nghi viec": "status-left",
+		}),
+		[]
+	);
+
 	const getInitials = (name) => {
 		if (!name) {
 			return "NV";
@@ -74,10 +108,17 @@ function EmployeesPage({
 	}, []);
 
 	return (
-		<section className="admin-section">
+		<section className="admin-section employee-page">
+			<div className="employee-hero">
+				<div className="employee-hero-content">
+					<h2>Quản lý nhân sự</h2>
+					<p>Tổng hợp nhân sự, vai trò và trạng thái làm việc</p>
+				</div>
+			</div>
+
 			<div className="admin-section-header">
 				<div>
-					<h2>Danh sách nhân viên</h2>
+					<h3>Danh sách nhân viên</h3>
 					<p>Tổng số: {employeeTotal} nhân viên</p>
 				</div>
 				<div className="admin-actions">
@@ -93,6 +134,28 @@ function EmployeesPage({
 					<button type="button" onClick={openCreateEmployee}>
 						Thêm nhân viên
 					</button>
+				</div>
+			</div>
+			<div className="employee-summary">
+				<div className="employee-stat-card total">
+					<span>Tổng nhân viên</span>
+					<strong>{employeeTotal}</strong>
+					<small>Đang hiển thị {employeeRows.length} nhân viên</small>
+				</div>
+				<div className="employee-stat-card active">
+					<span>Đang làm</span>
+					<strong>{statusCounts.active}</strong>
+					<small>Đang hoạt động</small>
+				</div>
+				<div className="employee-stat-card paused">
+					<span>Tạm nghỉ</span>
+					<strong>{statusCounts.paused}</strong>
+					<small>Tạm thời nghỉ</small>
+				</div>
+				<div className="employee-stat-card left">
+					<span>Nghỉ việc</span>
+					<strong>{statusCounts.left}</strong>
+					<small>Đã nghỉ</small>
 				</div>
 			</div>
 			{employeeFormOpen ? (
@@ -254,7 +317,7 @@ function EmployeesPage({
 					{employeeStatus.message}
 				</div>
 			) : null}
-			<div className="admin-table">
+			<div className="admin-table employee-table">
 				<table>
 					<thead>
 						<tr>
@@ -279,16 +342,32 @@ function EmployeesPage({
 									className="row-clickable"
 									onClick={() => openViewEmployee(row)}
 								>
-									<td>{row.id}</td>
-									<td>{row.ho_ten}</td>
-									<td>{row.email}</td>
 									<td>
-										{employeeDepartments.find(
-											(department) => String(department.id) === String(row.phong_ban_id)
-										)?.ten_phong || row.phong_ban_id || "-"}
+										<span className="data-emphasis">{row.id}</span>
 									</td>
-									<td>{row.chuc_vu || "-"}</td>
-									<td>{row.trang_thai_lam_viec || "-"}</td>
+									<td>
+										<span className="data-chip">{row.ho_ten}</span>
+									</td>
+									<td>
+										<span className="data-chip muted">{row.email}</span>
+									</td>
+									<td>
+										<span className="data-chip">
+											{departmentMap[String(row.phong_ban_id)] || row.phong_ban_id || "-"}
+										</span>
+									</td>
+									<td>
+										<span className="data-chip">{row.chuc_vu || "-"}</span>
+									</td>
+									<td>
+										<span
+											className={`status-pill ${
+												statusClassMap[row.trang_thai_lam_viec] || "status-muted"
+											}`}
+										>
+											{row.trang_thai_lam_viec || "-"}
+										</span>
+									</td>
 									<td>
 										<div className="row-actions">
 											<button

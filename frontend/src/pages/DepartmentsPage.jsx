@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 
 function DepartmentsPage({
 	departmentRows,
@@ -12,6 +12,8 @@ function DepartmentsPage({
 	departmentFormOpen,
 	departmentEditingId,
 	departmentForm,
+	departmentLeaders,
+	departmentLeadersLoading,
 	departmentActionTarget,
 	departmentTransferId,
 	setDepartmentQuery,
@@ -30,11 +32,32 @@ function DepartmentsPage({
 		fetchDepartments(1);
 	}, []);
 
+	const summaryStats = useMemo(() => {
+		const totalEmployees = departmentRows.reduce(
+			(sum, row) => sum + (Number(row.so_nhan_vien) || 0),
+			0
+		);
+		const emptyDepartments = departmentRows.filter(
+			(row) => (Number(row.so_nhan_vien) || 0) === 0
+		).length;
+		return {
+			totalEmployees,
+			emptyDepartments,
+		};
+	}, [departmentRows]);
+
 	return (
-		<section className="admin-section">
+		<section className="admin-section department-page">
+			<div className="department-hero">
+				<div className="department-hero-content">
+					<h2>Quản lý phòng ban</h2>
+					<p>Tổng hợp bộ phận, trưởng phòng và quy mô nhân sự</p>
+				</div>
+			</div>
+
 			<div className="admin-section-header">
 				<div>
-					<h2>Danh sách phòng ban</h2>
+					<h3>Danh sách phòng ban</h3>
 					<p>Tổng số: {departmentTotal} phòng ban</p>
 				</div>
 				<div className="admin-actions">
@@ -50,6 +73,24 @@ function DepartmentsPage({
 					<button type="button" onClick={openCreateDepartment}>
 						Thêm phòng ban
 					</button>
+				</div>
+			</div>
+
+			<div className="department-summary">
+				<div className="department-stat-card total">
+					<span>Tổng phòng ban</span>
+					<strong>{departmentTotal}</strong>
+					<small>Đang hiển thị {departmentRows.length} phòng ban</small>
+				</div>
+				<div className="department-stat-card staff">
+					<span>Tổng nhân sự</span>
+					<strong>{summaryStats.totalEmployees}</strong>
+					<small>Quy mô toàn hệ thống</small>
+				</div>
+				<div className="department-stat-card empty">
+					<span>Phòng ban trống</span>
+					<strong>{summaryStats.emptyDepartments}</strong>
+					<small>Cần bổ sung nhân sự</small>
 				</div>
 			</div>
 
@@ -77,7 +118,29 @@ function DepartmentsPage({
 									}
 								/>
 							</div>
+							<div className="form-group">
+								<label>Trưởng bộ phận</label>
+								<select
+									value={departmentForm.truong_phong_id}
+									onChange={(event) =>
+										setDepartmentForm({
+											...departmentForm,
+											truong_phong_id: event.target.value,
+										})
+									}
+								>
+									<option value="">Chọn trưởng bộ phận</option>
+									{departmentLeaders.map((leader) => (
+										<option key={leader.id} value={leader.id}>
+											{leader.ho_ten}
+										</option>
+									))}
+								</select>
+							</div>
 						</div>
+						{departmentLeadersLoading ? (
+							<p>Đang tải danh sách trưởng bộ phận...</p>
+						) : null}
 						<div className="form-actions">
 							<button type="button" onClick={submitDepartmentForm}>
 								{departmentEditingId ? "Lưu cập nhật" : "Lưu phòng ban"}
@@ -96,7 +159,7 @@ function DepartmentsPage({
 				</div>
 			) : null}
 
-			<div className="admin-table">
+			<div className="admin-table department-table">
 				<table>
 					<thead>
 						<tr>
@@ -115,10 +178,18 @@ function DepartmentsPage({
 						) : (
 							departmentRows.map((row) => (
 								<tr key={row.id}>
-									<td>{row.id}</td>
-									<td>{row.ten_phong}</td>
-									<td>{row.truong_phong || "-"}</td>
-									<td>{row.so_nhan_vien ?? 0}</td>
+									<td>
+										<span className="data-emphasis">{row.id}</span>
+									</td>
+									<td>
+										<span className="data-chip">{row.ten_phong}</span>
+									</td>
+									<td>
+										<span className="data-chip muted">{row.truong_phong || "-"}</span>
+									</td>
+									<td>
+										<span className="data-emphasis">{row.so_nhan_vien ?? 0}</span>
+									</td>
 									<td>
 										<div className="row-actions">
 											<button type="button" onClick={() => openEditDepartment(row)}>

@@ -1,5 +1,5 @@
 import json
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -28,10 +28,24 @@ class ChamCongCheckPayload(BaseModel):
 
 
 def _ensure_location(payload: ChamCongCheckPayload) -> dict:
+	if (payload.loai_cham_cong or "").lower() == "wfh":
+		return {}
 	has_coords = payload.vi_do is not None and payload.kinh_do is not None
 	has_address = bool(payload.vi_tri and payload.vi_tri.strip())
 	if not has_coords and not has_address:
 		raise HTTPException(status_code=400, detail="Missing location")
+	return {
+		"lat": payload.vi_do,
+		"lng": payload.kinh_do,
+		"address": payload.vi_tri.strip() if payload.vi_tri else None,
+	}
+
+
+def _extract_location(payload: ChamCongCheckPayload) -> Optional[dict]:
+	has_coords = payload.vi_do is not None and payload.kinh_do is not None
+	has_address = bool(payload.vi_tri and payload.vi_tri.strip())
+	if not has_coords and not has_address:
+		return None
 	return {
 		"lat": payload.vi_do,
 		"lng": payload.kinh_do,
@@ -51,32 +65,54 @@ def _parse_bao_cao(value: Optional[str]) -> dict:
 	return {"note": value}
 
 
-def _merge_bao_cao(existing: Optional[str], note: Optional[str], location_key: str, location: dict) -> str:
+def _merge_bao_cao(
+	existing: Optional[str],
+	note: Optional[str],
+	location_key: str,
+	location: Optional[dict],
+) -> str:
 	data = _parse_bao_cao(existing)
 	if note and note.strip():
 		data["note"] = note.strip()
-	data[location_key] = location
+	if location is not None:
+		data[location_key] = location
 	return json.dumps(data, ensure_ascii=False)
 
 
 def _resolve_status(check_in_time: Optional[time], check_out_time: Optional[time]) -> str:
-	flags = []
-	if check_in_time and check_in_time > WORK_LATE:
-		flags.append("Đi trễ")
-	if check_out_time and check_out_time < WORK_END:
-		flags.append("Thiếu giờ")
-	return ", ".join(flags) if flags else "Bình thường"
+	check_in_time = _normalize_time(check_in_time)
+	if not check_in_time:
+		return "Bình thường"
+	return "Đi trễ" if check_in_time > WORK_LATE else "Đúng giờ"
 
 
 def _calculate_hours(check_in_time: Optional[time], check_out_time: Optional[time]) -> Optional[float]:
-	if not check_in_time or not check_out_time:
+	check_in_time = _normalize_time(check_in_time)
+	check_out_time = _normalize_time(check_out_time)
+	if not check_in_time:
 		return None
+	if not check_out_time:
+		return 0.0
 	start_dt = datetime.combine(date.today(), check_in_time)
 	end_dt = datetime.combine(date.today(), check_out_time)
 	seconds = (end_dt - start_dt).total_seconds()
 	if seconds <= 0:
 		return 0.0
 	return round(seconds / 3600, 2)
+
+
+def _normalize_time(value: Optional[object]) -> Optional[time]:
+	if value is None:
+		return None
+	if isinstance(value, time):
+		return value
+	if isinstance(value, timedelta):
+		total_seconds = int(value.total_seconds())
+		hours = (total_seconds // 3600) % 24
+		minutes = (total_seconds % 3600) // 60
+		seconds = total_seconds % 60
+		return time(hour=hours, minute=minutes, second=seconds)
+	return None
 
 
 def _decorate_row(row: dict) -> dict:
@@ -89,9 +125,7 @@ def _decorate_row(row: dict) -> dict:
 		if not check_in_time or not check_out_time:
 			status = "Không có mặt"
 	elif row.get("ngay") == today:
-		if check_in_time and not check_out_time:
-			status = "Chưa check-out"
-		elif not check_in_time and check_out_time:
+		if not check_in_time and check_out_time:
 			status = "Không có mặt"
 
 	bao_cao = _parse_bao_cao(row.get("bao_cao"))
@@ -124,32 +158,45 @@ def get_hom_nay(nhan_vien_id: int, db: Session = Depends(get_db)) -> dict:
 
 @router.get("/lich_su")
 def list_lich_su(
-	nhan_vien_id: int,
+	nhan_vien_id: Optional[int] = None,
 	tu_ngay: Optional[str] = None,
 	den_ngay: Optional[str] = None,
 	page: int = 1,
 	page_size: int = 10,
 	db: Session = Depends(get_db),
 ) -> dict:
-	conditions = ["nhan_vien_id = :nhan_vien_id"]
-	params = {"nhan_vien_id": nhan_vien_id}
+	conditions = []
+	params: dict = {}
+	if nhan_vien_id is not None:
+		conditions.append("cham_cong.nhan_vien_id = :nhan_vien_id")
+		params["nhan_vien_id"] = nhan_vien_id
 	if tu_ngay:
-		conditions.append("ngay >= :tu_ngay")
+		conditions.append("cham_cong.ngay >= :tu_ngay")
 		params["tu_ngay"] = tu_ngay
 	if den_ngay:
-		conditions.append("ngay <= :den_ngay")
+		conditions.append("cham_cong.ngay <= :den_ngay")
 		params["den_ngay"] = den_ngay
-	where_sql = " AND ".join(conditions)
+	where_sql = " AND ".join(conditions) if conditions else "1=1"
 	limit = max(page_size, 1)
 	offset = max(page - 1, 0) * limit
 
 	rows = db.execute(
 		text(
 			f"""
-			SELECT id, nhan_vien_id, ngay, bao_cao, check_in, check_out, loai_cham_cong, trang_thai
+			SELECT
+			  cham_cong.id,
+			  cham_cong.nhan_vien_id,
+			  cham_cong.ngay,
+			  cham_cong.bao_cao,
+			  cham_cong.check_in,
+			  cham_cong.check_out,
+			  cham_cong.loai_cham_cong,
+			  cham_cong.trang_thai,
+			  nhanvien.ho_ten
 			FROM cham_cong
+			LEFT JOIN nhanvien ON nhanvien.id = cham_cong.nhan_vien_id
 			WHERE {where_sql}
-			ORDER BY ngay DESC
+			ORDER BY cham_cong.ngay DESC, cham_cong.id DESC
 			LIMIT :limit OFFSET :offset
 			"""
 		),
@@ -259,7 +306,7 @@ def check_out(payload: ChamCongCheckPayload, db: Session = Depends(get_db)) -> d
 
 	today = date.today()
 	now_time = datetime.now().time().replace(microsecond=0)
-	location = _ensure_location(payload)
+	location = _extract_location(payload)
 
 	row = db.execute(
 		text(

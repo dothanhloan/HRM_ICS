@@ -39,14 +39,51 @@ function LeavePage({
 		[]
 	);
 
-	const leaveTypes = [
-		"Phep nam",
-		"Phep khong luong",
-		"Nghi om",
-		"Nghi thai san",
-		"Nghi viec rieng",
-		"Khac",
-	];
+	const leaveTypes = useMemo(
+		() => [
+			{ value: "Phep nam", label: "Phép năm" },
+			{ value: "Phep khong luong", label: "Phép không lương" },
+			{ value: "Nghi om", label: "Nghỉ ốm" },
+			{ value: "Nghi thai san", label: "Nghỉ thai sản" },
+			{ value: "Nghi viec rieng", label: "Nghỉ việc riêng" },
+			{ value: "Khac", label: "Khác" },
+		],
+		[]
+	);
+
+	const leaveTypeLabels = useMemo(() => {
+		return leaveTypes.reduce((acc, item) => {
+			acc[item.value] = item.label;
+			return acc;
+		}, {});
+	}, [leaveTypes]);
+
+	const statusCounts = useMemo(() => {
+		return leaveRows.reduce(
+			(acc, row) => {
+				if (row.trang_thai === "cho_duyet") {
+					acc.pending += 1;
+				}
+				if (row.trang_thai === "da_duyet") {
+					acc.approved += 1;
+				}
+				if (row.trang_thai === "tu_choi") {
+					acc.rejected += 1;
+				}
+				return acc;
+			},
+			{ pending: 0, approved: 0, rejected: 0 }
+		);
+	}, [leaveRows]);
+
+	const statusClassMap = useMemo(
+		() => ({
+			cho_duyet: "status-pending",
+			da_duyet: "status-approved",
+			tu_choi: "status-rejected",
+		}),
+		[]
+	);
 
 	const openRejectModal = (row) => {
 		setRejectTarget(row);
@@ -64,30 +101,60 @@ function LeavePage({
 	};
 
 	return (
-		<section className="admin-section">
+		<section className="admin-section leave-page">
+			<div className="leave-hero">
+				<div className="leave-hero-content">
+					<h2>Xin nghỉ phép</h2>
+					<p>Quản lý và theo dõi đơn nghỉ phép của bạn</p>
+				</div>
+			</div>
+
 			<div className="admin-section-header">
 				<div>
-					<h2>Quan ly nghi phep</h2>
-					<p>Tong so: {leaveTotal} don</p>
+					<h3>Danh sách đơn nghỉ phép</h3>
+					<p>Tổng số: {leaveTotal ?? leaveRows.length} đơn</p>
 				</div>
 				<div className="admin-actions">
 					<select
 						value={leaveStatusFilter}
 						onChange={(event) => setLeaveStatusFilter(event.target.value)}
 					>
-						<option value="">Tat ca trang thai</option>
-						<option value="cho_duyet">Cho duyet</option>
-						<option value="da_duyet">Da duyet</option>
-						<option value="tu_choi">Tu choi</option>
+						<option value="">Tất cả trạng thái</option>
+						<option value="cho_duyet">Chờ duyệt</option>
+						<option value="da_duyet">Đã duyệt</option>
+						<option value="tu_choi">Từ chối</option>
 					</select>
 					<button type="button" onClick={() => fetchLeaveRequests(1)}>
-						Tim kiem
+						Tìm kiếm
 					</button>
 					{!isAdmin ? (
 						<button type="button" onClick={() => setLeaveFormOpen(true)}>
-							Tao don nghi phep
+							Tạo đơn nghỉ phép
 						</button>
 					) : null}
+				</div>
+			</div>
+
+			<div className="leave-summary">
+				<div className="leave-stat-card total">
+					<span>Tổng số đơn</span>
+					<strong>{leaveTotal ?? leaveRows.length}</strong>
+					<small>Hiển thị {leaveRows.length} đơn</small>
+				</div>
+				<div className="leave-stat-card pending">
+					<span>Chờ duyệt</span>
+					<strong>{statusCounts.pending}</strong>
+					<small>Cần xử lý</small>
+				</div>
+				<div className="leave-stat-card approved">
+					<span>Đã duyệt</span>
+					<strong>{statusCounts.approved}</strong>
+					<small>Đã xác nhận</small>
+				</div>
+				<div className="leave-stat-card rejected">
+					<span>Từ chối</span>
+					<strong>{statusCounts.rejected}</strong>
+					<small>Không hợp lệ</small>
 				</div>
 			</div>
 
@@ -95,7 +162,7 @@ function LeavePage({
 				<div className="modal-backdrop">
 					<div className="modal">
 						<div className="modal-header">
-							<h3>Tao don nghi phep</h3>
+							<h3>Tạo đơn nghỉ phép</h3>
 							<button
 								type="button"
 								className="ghost"
@@ -104,12 +171,12 @@ function LeavePage({
 									resetLeaveForm();
 								}}
 							>
-								Dong
+								Đóng
 							</button>
 						</div>
 						<div className="form-grid">
 							<div className="form-group">
-								<label>Loai nghi *</label>
+								<label>Loại nghỉ *</label>
 								<select
 									value={leaveForm.loai_phep}
 									onChange={(event) =>
@@ -120,14 +187,14 @@ function LeavePage({
 									}
 								>
 									{leaveTypes.map((item) => (
-										<option key={item} value={item}>
-											{item}
+										<option key={item.value} value={item.value}>
+											{item.label}
 										</option>
 									))}
 								</select>
 							</div>
 							<div className="form-group">
-								<label>Ngay bat dau *</label>
+								<label>Ngày bắt đầu *</label>
 								<input
 									type="date"
 									value={leaveForm.ngay_bat_dau}
@@ -140,7 +207,7 @@ function LeavePage({
 								/>
 							</div>
 							<div className="form-group">
-								<label>Ngay ket thuc *</label>
+								<label>Ngày kết thúc *</label>
 								<input
 									type="date"
 									value={leaveForm.ngay_ket_thuc}
@@ -153,7 +220,7 @@ function LeavePage({
 								/>
 							</div>
 							<div className="form-group">
-								<label>Ly do *</label>
+								<label>Lý do *</label>
 								<textarea
 									rows="3"
 									value={leaveForm.ly_do}
@@ -166,7 +233,7 @@ function LeavePage({
 								/>
 							</div>
 							<div className="form-group">
-								<label>Ghi chu</label>
+								<label>Ghi chú</label>
 								<textarea
 									rows="3"
 									value={leaveForm.ghi_chu}
@@ -186,7 +253,7 @@ function LeavePage({
 						) : null}
 						<div className="form-actions">
 							<button type="button" onClick={submitLeaveForm}>
-								Gui don
+								Gửi đơn
 							</button>
 							<button
 								type="button"
@@ -196,7 +263,7 @@ function LeavePage({
 									resetLeaveForm();
 								}}
 							>
-								Huy
+								Hủy
 							</button>
 						</div>
 					</div>
@@ -207,17 +274,17 @@ function LeavePage({
 				<div className="modal-backdrop">
 					<div className="modal confirm">
 						<div className="modal-header">
-							<h3>Tu choi don nghi</h3>
+							<h3>Từ chối đơn nghỉ</h3>
 							<button
 								type="button"
 								className="ghost"
 								onClick={() => setRejectModalOpen(false)}
 							>
-								Dong
+								Đóng
 							</button>
 						</div>
 						<div className="form-group">
-							<label>Ly do tu choi *</label>
+							<label>Lý do từ chối *</label>
 							<textarea
 								rows="3"
 								value={rejectReason}
@@ -226,14 +293,14 @@ function LeavePage({
 						</div>
 						<div className="form-actions">
 							<button type="button" onClick={confirmReject}>
-								Xac nhan
+								Xác nhận
 							</button>
 							<button
 								type="button"
 								className="ghost"
 								onClick={() => setRejectModalOpen(false)}
 							>
-								Huy
+								Hủy
 							</button>
 						</div>
 					</div>
@@ -246,45 +313,71 @@ function LeavePage({
 				</div>
 			) : null}
 
-			<div className="admin-table">
+			<div className="admin-table leave-table">
 				<table>
 					<thead>
 						<tr>
 							<th>ID</th>
-							<th>Nhan vien</th>
-							<th>Loai nghi</th>
-							<th>Bat dau</th>
-							<th>Ket thuc</th>
-							<th>So ngay</th>
-							<th>Trang thai</th>
-							<th>Ly do</th>
-							<th>Ghi chu</th>
-							<th>Nguoi duyet</th>
-							{isAdmin ? <th>Thao tac</th> : null}
+							<th>Nhân viên</th>
+							<th>Loại nghỉ</th>
+							<th>Ngày bắt đầu</th>
+							<th>Ngày kết thúc</th>
+							<th>Số ngày</th>
+							<th>Trạng thái</th>
+							<th>Lý do</th>
+							<th>Ghi chú</th>
+							<th>Người duyệt</th>
+							{isAdmin ? <th>Thao tác</th> : null}
 						</tr>
 					</thead>
 					<tbody>
 						{leaveLoading ? (
 							<tr>
-								<td colSpan={isAdmin ? 11 : 10}>Dang tai du lieu...</td>
+								<td colSpan={isAdmin ? 11 : 10}>Đang tải dữ liệu...</td>
 							</tr>
 						) : leaveRows.length === 0 ? (
 							<tr>
-								<td colSpan={isAdmin ? 11 : 10}>Chua co don nghi phep.</td>
+								<td colSpan={isAdmin ? 11 : 10}>Chưa có đơn nghỉ phép.</td>
 							</tr>
 						) : (
 							leaveRows.map((row) => (
 								<tr key={row.id}>
-									<td>{row.id}</td>
-									<td>{row.nhan_vien_ten || row.nhan_vien_id}</td>
-									<td>{row.loai_phep || "-"}</td>
-									<td>{row.ngay_bat_dau || "-"}</td>
-									<td>{row.ngay_ket_thuc || "-"}</td>
-									<td>{row.so_ngay ?? "-"}</td>
-									<td>{statusLabels[row.trang_thai] || row.trang_thai}</td>
+									<td>
+										<span className="data-emphasis">{row.id}</span>
+									</td>
+									<td>
+										<span className="data-chip">
+											{row.nhan_vien_ten || row.nhan_vien_id}
+										</span>
+									</td>
+									<td>
+										<span className="data-chip">
+											{leaveTypeLabels[row.loai_phep] || row.loai_phep || "-"}
+										</span>
+									</td>
+									<td>
+										<span className="data-emphasis">{row.ngay_bat_dau || "-"}</span>
+									</td>
+									<td>
+										<span className="data-emphasis">{row.ngay_ket_thuc || "-"}</span>
+									</td>
+									<td>
+										<span className="data-emphasis">{row.so_ngay ?? "-"}</span>
+									</td>
+									<td>
+										<span
+											className={`status-pill ${statusClassMap[row.trang_thai] || "status-muted"}`}
+										>
+											{statusLabels[row.trang_thai] || row.trang_thai}
+										</span>
+									</td>
 									<td>{row.ly_do || "-"}</td>
 									<td>{row.ghi_chu || row.ly_do_tu_choi || "-"}</td>
-									<td>{row.nguoi_duyet_ten || row.nguoi_duyet_id || "-"}</td>
+									<td>
+										<span className="data-chip muted">
+											{row.nguoi_duyet_ten || row.nguoi_duyet_id || "-"}
+										</span>
+									</td>
 									{isAdmin ? (
 										<td>
 											<div className="row-actions">
@@ -301,7 +394,7 @@ function LeavePage({
 													disabled={row.trang_thai !== "cho_duyet"}
 													onClick={() => openRejectModal(row)}
 												>
-													Tu choi
+													Từ chối
 												</button>
 											</div>
 										</td>

@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 
+const COMPANY_LOCATION = {
+	lat: 20.980389,
+	lng: 105.813893,
+};
+
+const CHECKIN_RADIUS_METERS = 200;
+
 function AttendancePage({
 	user,
+	isAdmin,
 	attendanceToday,
 	attendanceHistory,
 	attendanceStatus,
@@ -19,202 +27,412 @@ function AttendancePage({
 	const [locationStatus, setLocationStatus] = useState({ type: "", message: "" });
 	const [note, setNote] = useState("");
 	const [locating, setLocating] = useState(false);
+	const [locationPromptOpen, setLocationPromptOpen] = useState(false);
+	const [wfhPromptOpen, setWfhPromptOpen] = useState(false);
+	const [month, setMonth] = useState(() => String(new Date().getMonth() + 1));
+	const [year, setYear] = useState(() => String(new Date().getFullYear()));
 
 	useEffect(() => {
 		if (!user?.id) {
 			return;
 		}
-		fetchAttendanceToday(user.id);
-		fetchAttendanceHistory(user.id, 1, 7);
+		if (!isAdmin) {
+			fetchAttendanceToday(user.id);
+		}
+		fetchAttendanceHistory(user.id, 1, 7, undefined, undefined, isAdmin);
 	}, [user?.id]);
 
-	const hasLocation = useMemo(() => {
-		return (
-			(location.lat !== null && location.lng !== null) ||
-			(location.address && location.address.trim())
-		);
-	}, [location]);
+	const historyRows = attendanceHistory || [];
 
-	const requestLocation = () => {
-		setLocationStatus({ type: "", message: "" });
-		if (!navigator.geolocation) {
-			setLocationStatus({ type: "error", message: "Trình duyệt không hỗ trợ định vị." });
-			return;
-		}
-		setLocating(true);
-		navigator.geolocation.getCurrentPosition(
-			(position) => {
-				setLocation((prev) => ({
-					...prev,
-					lat: position.coords.latitude,
-					lng: position.coords.longitude,
-				}));
-				setLocationStatus({ type: "success", message: "Đã cập nhật vị trí." });
-				setLocating(false);
-			},
-			() => {
-				setLocationStatus({
-					type: "error",
-					message: "Không cấp quyền vị trí, không thể chấm công.",
-				});
-				setLocating(false);
-			}
+	const summaryStats = useMemo(() => {
+		const normalize = (value) => String(value || "").toLowerCase();
+		const totalDays = historyRows.length;
+		const lateDays = historyRows.filter((row) => normalize(row.trang_thai).includes("tre"))
+			.length;
+		const totalHours = historyRows.reduce(
+			(sum, row) => sum + (Number(row.so_gio_lam) || 0),
+			0
 		);
+		const fullDays = historyRows.filter((row) => {
+			const status = normalize(row.trang_thai_hien_tai || row.trang_thai);
+			return status.includes("du_cong") || status.includes("dung_gio");
+		}).length;
+		return {
+			totalDays,
+			lateDays,
+			totalHours,
+			fullDays,
+		};
+	}, [historyRows]);
+
+	const getDistanceMeters = (lat1, lng1, lat2, lng2) => {
+		const toRadians = (value) => (value * Math.PI) / 180;
+		const earthRadius = 6371000;
+		const deltaLat = toRadians(lat2 - lat1);
+		const deltaLng = toRadians(lng2 - lng1);
+		const a =
+			Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+			Math.cos(toRadians(lat1)) *
+				Math.cos(toRadians(lat2)) *
+				Math.sin(deltaLng / 2) *
+				Math.sin(deltaLng / 2);
+		const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+		return earthRadius * c;
 	};
 
-	const buildPayload = () => ({
+	const getCurrentPosition = () =>
+		new Promise((resolve, reject) => {
+			if (!navigator.geolocation) {
+				reject(new Error("Trình duyệt không hỗ trợ định vị."));
+				return;
+			}
+			navigator.geolocation.getCurrentPosition(resolve, reject, {
+				enableHighAccuracy: true,
+				timeout: 10000,
+				maximumAge: 0,
+			});
+		});
+
+	const requestLocation = async () => {
+		setLocationStatus({ type: "", message: "" });
+		setLocating(true);
+		try {
+			const position = await getCurrentPosition();
+			setLocation((prev) => ({
+				...prev,
+				lat: position.coords.latitude,
+				lng: position.coords.longitude,
+			}));
+			setLocationStatus({ type: "success", message: "Đã cập nhật vị trí." });
+			return {
+				lat: position.coords.latitude,
+				lng: position.coords.longitude,
+			};
+		} catch (error) {
+			setLocationStatus({
+				type: "error",
+				message:
+					error?.message || "Không cấp quyền vị trí, không thể chấm công.",
+			});
+			return null;
+		} finally {
+			setLocating(false);
+		}
+	};
+
+	const buildPayload = (overrideLocation = {}) => ({
 		nhan_vien_id: user?.id,
 		vi_tri: location.address || undefined,
-		vi_do: location.lat ?? undefined,
-		kinh_do: location.lng ?? undefined,
+		vi_do: overrideLocation.lat ?? location.lat ?? undefined,
+		kinh_do: overrideLocation.lng ?? location.lng ?? undefined,
 		bao_cao: note || undefined,
+		loai_cham_cong: "office",
 	});
 
-	const handleCheckIn = async () => {
+	const buildWfhPayload = () => ({
+		nhan_vien_id: user?.id,
+		bao_cao: note || undefined,
+		loai_cham_cong: "wfh",
+	});
+
+	const handleCheckInClick = () => {
 		if (!user?.id) {
 			return;
 		}
-		if (!hasLocation) {
+		setLocationPromptOpen(true);
+	};
+
+	const handleConfirmLocation = async () => {
+		setLocationPromptOpen(false);
+		if (!user?.id) {
+			return;
+		}
+		const coords = await requestLocation();
+		if (!coords) {
+			return;
+		}
+		const distance = getDistanceMeters(
+			coords.lat,
+			coords.lng,
+			COMPANY_LOCATION.lat,
+			COMPANY_LOCATION.lng
+		);
+		if (distance > CHECKIN_RADIUS_METERS) {
 			setLocationStatus({
 				type: "error",
-				message: "Vui lòng bật định vị hoặc nhập địa chỉ trước khi check-in.",
+				message: `Bạn đang cách công ty ${Math.round(
+					distance
+				)}m, ngoài phạm vi ${CHECKIN_RADIUS_METERS}m.`,
 			});
 			return;
 		}
-		await submitCheckIn(buildPayload());
+		await submitCheckIn(buildPayload(coords));
 	};
 
 	const handleCheckOut = async () => {
 		if (!user?.id) {
 			return;
 		}
-		if (!hasLocation) {
-			setLocationStatus({
-				type: "error",
-				message: "Vui lòng bật định vị hoặc nhập địa chỉ trước khi check-out.",
-			});
-			return;
-		}
 		await submitCheckOut(buildPayload());
 	};
 
-	return (
-		<section className="admin-section">
-			<div className="admin-section-header">
-				<div>
-					<h2>Chấm công</h2>
-					<p>Ghi nhận thời gian vào/ra làm việc và vị trí thực hiện.</p>
-				</div>
-				<div className="admin-actions">
-					<button type="button" className="ghost" onClick={requestLocation}>
-						{locating ? "Đang lấy vị trí..." : "Cập nhật vị trí"}
-					</button>
-					<button type="button" onClick={handleCheckIn}>
-						Check-in
-					</button>
-					<button type="button" className="ghost" onClick={handleCheckOut}>
-						Check-out
-					</button>
-				</div>
-			</div>
+	const handleWfhClick = () => {
+		if (!user?.id) {
+			return;
+		}
+		setWfhPromptOpen(true);
+	};
 
-			<div className="admin-grid">
-				<div className="admin-card">
-					<h3>Hôm nay</h3>
-					{attendanceLoading ? (
-						<p>Đang tải dữ liệu chấm công...</p>
-					) : attendanceToday ? (
-						<div className="card-stack">
-							<p>Trạng thái: {attendanceToday.trang_thai_hien_tai || "-"}</p>
-							<p>Check-in: {attendanceToday.check_in || "-"}</p>
-							<p>Check-out: {attendanceToday.check_out || "-"}</p>
-							<p>Số giờ làm: {attendanceToday.so_gio_lam ?? "-"}</p>
-							<p>
-								Vị trí check-in: {attendanceToday.check_in_location?.address || "-"}
-							</p>
-							<p>
-								Vị trí check-out: {attendanceToday.check_out_location?.address || "-"}
-							</p>
+	const handleConfirmWfh = async () => {
+		setWfhPromptOpen(false);
+		if (!user?.id) {
+			return;
+		}
+		await submitCheckIn(buildWfhPayload());
+	};
+
+	const handleCancelWfh = () => {
+		setWfhPromptOpen(false);
+		setLocationStatus({ type: "info", message: "Bạn đã hủy check-in WFH." });
+	};
+
+	const handleCancelLocation = () => {
+		setLocationPromptOpen(false);
+		setLocationStatus({ type: "info", message: "Bạn đã hủy yêu cầu truy cập vị trí." });
+	};
+
+	const handleFilter = () => {
+		if (!user?.id) {
+			return;
+		}
+		const monthNumber = Number(month);
+		const yearNumber = Number(year);
+		if (!monthNumber || !yearNumber) {
+			return;
+		}
+		const pad = (value) => String(value).padStart(2, "0");
+		const startDate = `${yearNumber}-${pad(monthNumber)}-01`;
+		const lastDay = new Date(yearNumber, monthNumber, 0).getDate();
+		const endDate = `${yearNumber}-${pad(monthNumber)}-${pad(lastDay)}`;
+		fetchAttendanceHistory(user.id, 1, 31, startDate, endDate, isAdmin);
+	};
+
+	const formatTime = (value) => {
+		if (!value || value === "-") {
+			return "-";
+		}
+		if (typeof value === "string") {
+			if (value.includes(":")) {
+				return value.slice(0, 8);
+			}
+			const durationMatch = value.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/i);
+			if (durationMatch) {
+				const hours = String(durationMatch[1] || "0").padStart(2, "0");
+				const minutes = String(durationMatch[2] || "0").padStart(2, "0");
+				const seconds = String(durationMatch[3] || "0").padStart(2, "0");
+				return `${hours}:${minutes}:${seconds}`;
+			}
+		}
+		return String(value);
+	};
+
+	return (
+		<section className="attendance-page">
+			{!isAdmin ? (
+				<div className="attendance-metrics">
+					<div className="metric-card metric-purple">
+						<p>Ngày đã chấm công</p>
+						<h3>{summaryStats.totalDays}</h3>
+					</div>
+					<div className="metric-card metric-pink">
+						<p>Ngày đi trễ</p>
+						<h3>{summaryStats.lateDays}</h3>
+					</div>
+					<div className="metric-card metric-blue">
+						<p>Tổng giờ làm việc</p>
+						<h3>{summaryStats.totalHours.toFixed(1)}</h3>
+					</div>
+					<div className="metric-card metric-green">
+						<p>Ngày đủ công</p>
+						<h3>{summaryStats.fullDays}</h3>
+					</div>
+				</div>
+			) : null}
+
+			<div className="attendance-card">
+				<div className="attendance-card-header">
+					<div>
+						<h2>Chấm công tháng {month}/{year}</h2>
+						<p>Quản lý lịch sử check-in/check-out và trạng thái làm việc.</p>
+					</div>
+					<div className="attendance-status">
+						<span className="status-label">Trạng thái hôm nay:</span>
+						{attendanceToday?.check_in ? (
+							<span className="status-pill status-success">
+								Check-in: {attendanceToday.check_in}
+							</span>
+						) : (
+							<span className="status-pill status-muted">Chưa check-in</span>
+						)}
+						{attendanceToday?.check_out ? (
+							<span className="status-pill status-success">
+								Check-out: {attendanceToday.check_out}
+							</span>
+						) : (
+							<span className="status-pill status-muted">Chưa check-out</span>
+						)}
+					</div>
+				</div>
+
+				<div className="attendance-actions">
+					{!isAdmin ? (
+						<div className="attendance-buttons">
+							<button
+								type="button"
+								className="btn-checkin"
+								onClick={handleCheckInClick}
+								disabled={locating}
+							>
+								Check-in
+							</button>
+							<button
+								type="button"
+								className="btn-checkout"
+								onClick={handleCheckOut}
+							>
+								Check-out
+							</button>
+							<button type="button" className="btn-wfh" onClick={handleWfhClick}>
+								WFH
+							</button>
 						</div>
 					) : (
-						<p>Chưa có dữ liệu chấm công hôm nay.</p>
+						<div className="attendance-buttons">
+							<span className="status-pill status-muted">
+								Admin chỉ xem dữ liệu chấm công
+							</span>
+						</div>
 					)}
+					<div className="attendance-filters">
+						<select value={month} onChange={(event) => setMonth(event.target.value)}>
+							{Array.from({ length: 12 }, (_, index) => String(index + 1)).map(
+								(item) => (
+									<option key={item} value={item}>
+										Tháng {item}
+									</option>
+								)
+							)}
+						</select>
+						<select value={year} onChange={(event) => setYear(event.target.value)}>
+							{Array.from({ length: 6 }, (_, index) => String(2024 + index)).map(
+								(item) => (
+									<option key={item} value={item}>
+										{item}
+									</option>
+								)
+							)}
+						</select>
+						<button type="button" className="btn-filter" onClick={handleFilter}>
+							Lọc
+						</button>
+					</div>
 				</div>
 
-				<div className="admin-card">
-					<h3>Ghi chú & vị trí</h3>
-					<div className="form-group">
-						<label>Địa chỉ (nếu không dùng GPS)</label>
-						<input
-							value={location.address}
-							onChange={(event) =>
-								setLocation((prev) => ({
-									...prev,
-									address: event.target.value,
-								}))
-							}
-						/>
-					</div>
-					<div className="form-group">
-						<label>Ghi chú</label>
-						<textarea
-							rows="3"
-							value={note}
-							onChange={(event) => setNote(event.target.value)}
-						/>
-					</div>
-					<div className="card-stack">
-						<p>Vĩ độ: {location.lat ?? "-"}</p>
-						<p>Kinh độ: {location.lng ?? "-"}</p>
-					</div>
-					{locationStatus.message ? (
-						<div className={`alert ${locationStatus.type}`}>
-							{locationStatus.message}
-						</div>
-					) : null}
-					{attendanceStatus.message ? (
-						<div className={`alert ${attendanceStatus.type}`}>
-							{attendanceStatus.message}
-						</div>
-					) : null}
-				</div>
-			</div>
-
-			<div className="admin-table">
-				<h3>Lịch sử 7 ngày gần nhất</h3>
-				<table>
-					<thead>
-						<tr>
-							<th>Ngày</th>
-							<th>Check-in</th>
-							<th>Check-out</th>
-							<th>Trạng thái</th>
-							<th>Số giờ</th>
-						</tr>
-					</thead>
-					<tbody>
-						{attendanceLoading ? (
+				<div className="attendance-table">
+					<table>
+						<thead>
 							<tr>
-								<td colSpan="5">Đang tải dữ liệu...</td>
+								{isAdmin ? <th>Nhân viên</th> : null}
+								<th>Ngày</th>
+								<th>Check-in</th>
+								<th>Check-out</th>
+								<th>Số giờ</th>
+								<th>Trạng thái</th>
+								<th>Báo cáo</th>
 							</tr>
-						) : attendanceHistory.length === 0 ? (
-							<tr>
-								<td colSpan="5">Chưa có dữ liệu chấm công.</td>
-							</tr>
-						) : (
-							attendanceHistory.map((item) => (
-								<tr key={item.id}>
-									<td>{item.ngay || "-"}</td>
-									<td>{item.check_in || "-"}</td>
-									<td>{item.check_out || "-"}</td>
-									<td>{item.trang_thai_hien_tai || item.trang_thai || "-"}</td>
-									<td>{item.so_gio_lam ?? "-"}</td>
+						</thead>
+						<tbody>
+							{attendanceLoading ? (
+								<tr>
+									<td colSpan={isAdmin ? 7 : 6}>Đang tải dữ liệu...</td>
 								</tr>
-							))
-						)}
-					</tbody>
-				</table>
+							) : historyRows.length === 0 ? (
+								<tr>
+									<td colSpan={isAdmin ? 7 : 6}>Chưa có dữ liệu chấm công.</td>
+								</tr>
+							) : (
+								historyRows.map((item) => (
+									<tr key={item.id}>
+										{isAdmin ? <td>{item.ho_ten || item.nhan_vien_id}</td> : null}
+										<td>{item.ngay || "-"}</td>
+										<td>{formatTime(item.check_in)}</td>
+										<td>{formatTime(item.check_out)}</td>
+										<td>{item.so_gio_lam ?? "-"}</td>
+										<td>
+											<span className="status-pill status-success">
+												{item.trang_thai_hien_tai || item.trang_thai || "-"}
+											</span>
+										</td>
+										<td>
+											<button type="button" className="btn-report">
+												Gửi báo cáo
+											</button>
+										</td>
+									</tr>
+								))
+							)}
+						</tbody>
+					</table>
+				</div>
 			</div>
+
+
+			{locationPromptOpen ? (
+				<div className="modal-backdrop">
+					<div className="modal confirm">
+						<div className="modal-header">
+							<h3>Cho phép truy cập vị trí?</h3>
+							<button type="button" className="ghost" onClick={handleCancelLocation}>
+								Hủy
+							</button>
+						</div>
+						<p>
+							Check-in cần vị trí trong bán kính {CHECKIN_RADIUS_METERS}m quanh công
+							ty.
+						</p>
+						<div className="form-actions">
+							<button type="button" onClick={handleConfirmLocation}>
+								Cho phép
+							</button>
+							<button type="button" className="ghost" onClick={handleCancelLocation}>
+								Hủy
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
+
+			{wfhPromptOpen ? (
+				<div className="modal-backdrop">
+					<div className="modal confirm">
+						<div className="modal-header">
+							<h3>Check-in WFH?</h3>
+							<button type="button" className="ghost" onClick={handleCancelWfh}>
+								Hủy
+							</button>
+						</div>
+						<p>Bạn có chắc chắn check-in làm việc tại nhà không?</p>
+						<div className="form-actions">
+							<button type="button" onClick={handleConfirmWfh}>
+								Cho phép
+							</button>
+							<button type="button" className="ghost" onClick={handleCancelWfh}>
+								Hủy
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
 		</section>
 	);
 }

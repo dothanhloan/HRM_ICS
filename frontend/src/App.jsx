@@ -120,7 +120,10 @@ function App() {
 	const [departmentEditingId, setDepartmentEditingId] = useState(null);
 	const [departmentForm, setDepartmentForm] = useState({
 		ten_phong: "",
+		truong_phong_id: "",
 	});
+	const [departmentLeaders, setDepartmentLeaders] = useState([]);
+	const [departmentLeadersLoading, setDepartmentLeadersLoading] = useState(false);
 	const [departmentActionTarget, setDepartmentActionTarget] = useState(null);
 	const [departmentTransferId, setDepartmentTransferId] = useState("");
 	const [projectForm, setProjectForm] = useState({
@@ -178,6 +181,9 @@ function App() {
 			}
 
 			setUser(data.user);
+			setAttendanceToday(null);
+			setAttendanceHistory([]);
+			setAttendanceStatus({ type: "", message: "" });
 			setStatus({ type: "", message: "" });
 			navigate("/dashboard");
 		} catch (error) {
@@ -257,9 +263,10 @@ function App() {
 		setDepartmentTotalPages(0);
 		setDepartmentFormOpen(false);
 		setDepartmentEditingId(null);
-		setDepartmentForm({ ten_phong: "" });
+		setDepartmentForm({ ten_phong: "", truong_phong_id: "" });
 		setDepartmentActionTarget(null);
 		setDepartmentTransferId("");
+		setDepartmentLeaders([]);
 		navigate("/login");
 	};
 
@@ -285,18 +292,33 @@ function App() {
 		}
 	};
 
-	const fetchAttendanceHistory = async (nhanVienId, page = 1, pageSize = 7) => {
-		if (!nhanVienId) {
+	const fetchAttendanceHistory = async (
+		nhanVienId,
+		page = 1,
+		pageSize = 7,
+		tuNgay,
+		denNgay,
+		fetchAll = false
+	) => {
+		if (!fetchAll && !nhanVienId) {
 			return;
 		}
 		setAttendanceLoading(true);
 		setAttendanceStatus({ type: "", message: "" });
 		try {
 			const params = new URLSearchParams({
-				nhan_vien_id: String(nhanVienId),
 				page: String(page),
 				page_size: String(pageSize),
 			});
+			if (!fetchAll) {
+				params.set("nhan_vien_id", String(nhanVienId));
+			}
+			if (tuNgay) {
+				params.set("tu_ngay", tuNgay);
+			}
+			if (denNgay) {
+				params.set("den_ngay", denNgay);
+			}
 			const response = await fetch(
 				`${API_BASE}/api/v1/cham_cong/lich_su?${params.toString()}`
 			);
@@ -312,7 +334,14 @@ function App() {
 		}
 	};
 
-	const submitCheckIn = async ({ nhan_vien_id, vi_tri, vi_do, kinh_do, bao_cao }) => {
+	const submitCheckIn = async ({
+		nhan_vien_id,
+		vi_tri,
+		vi_do,
+		kinh_do,
+		bao_cao,
+		loai_cham_cong,
+	}) => {
 		setAttendanceStatus({ type: "", message: "" });
 		try {
 			const response = await fetch(`${API_BASE}/api/v1/cham_cong/check_in`, {
@@ -324,6 +353,7 @@ function App() {
 					vi_do,
 					kinh_do,
 					bao_cao,
+					loai_cham_cong,
 				}),
 			});
 			const data = await response.json();
@@ -331,6 +361,44 @@ function App() {
 				throw new Error(data.detail || "Khong the check-in");
 			}
 			setAttendanceStatus({ type: "success", message: "Check-in thanh cong." });
+			const today = new Date();
+			const todayStr = today.toISOString().slice(0, 10);
+			const checkInValue = data.check_in || today.toTimeString().slice(0, 8);
+			setAttendanceToday((prev) => ({
+				...(prev || {}),
+				ngay: prev?.ngay || todayStr,
+				check_in: checkInValue,
+				trang_thai: data.trang_thai,
+				trang_thai_hien_tai: data.trang_thai,
+				so_gio_lam: 0.0,
+			}));
+			setAttendanceHistory((prev) => {
+				const rows = Array.isArray(prev) ? prev : [];
+				const index = rows.findIndex((row) => row.ngay === todayStr);
+				if (index >= 0) {
+					const nextRows = [...rows];
+					nextRows[index] = {
+						...nextRows[index],
+						check_in: checkInValue,
+						trang_thai: data.trang_thai,
+						trang_thai_hien_tai: data.trang_thai,
+						so_gio_lam: 0.0,
+					};
+					return nextRows;
+				}
+				return [
+					{
+						id: `local-${todayStr}`,
+						ngay: todayStr,
+						check_in: checkInValue,
+						check_out: null,
+						trang_thai: data.trang_thai,
+						trang_thai_hien_tai: data.trang_thai,
+						so_gio_lam: 0.0,
+					},
+					...rows,
+				];
+			});
 			await fetchAttendanceToday(nhan_vien_id);
 			await fetchAttendanceHistory(nhan_vien_id);
 		} catch (error) {
@@ -511,7 +579,7 @@ function App() {
 
 	const resetDepartmentForm = () => {
 		setDepartmentEditingId(null);
-		setDepartmentForm({ ten_phong: "" });
+		setDepartmentForm({ ten_phong: "", truong_phong_id: "" });
 	};
 
 	const resetEmployeeForm = () => {
@@ -533,8 +601,8 @@ function App() {
 		});
 	};
 
-	const fetchEmployeeDepartments = async () => {
-		if (employeeDepartments.length > 0) {
+	const fetchEmployeeDepartments = async (force = false) => {
+		if (!force && employeeDepartments.length > 0) {
 			return;
 		}
 		setEmployeeDepartmentsLoading(true);
@@ -731,7 +799,11 @@ function App() {
 			params.set("scope", "all");
 			params.set("page", String(nextPage));
 			params.set("page_size", String(taskPageSize));
-			if (user?.id) {
+			const actor = (user?.vai_tro || "").toLowerCase().includes("admin")
+				? "admin"
+				: "employee";
+			params.set("actor", actor);
+			if (actor === "employee" && user?.id) {
 				params.set("nhan_vien_id", String(user.id));
 			}
 			const response = await fetch(
@@ -787,15 +859,37 @@ function App() {
 		}
 	};
 
+	const fetchDepartmentLeaders = async (force = false) => {
+		if (!force && departmentLeaders.length > 0) {
+			return;
+		}
+		setDepartmentLeadersLoading(true);
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/nhanvien?page=1&page_size=200`);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai danh sach nhan vien");
+			}
+			setDepartmentLeaders(data.data || []);
+		} catch (error) {
+			setDepartmentStatus({ type: "error", message: error.message });
+		} finally {
+			setDepartmentLeadersLoading(false);
+		}
+	};
+
 	const openCreateDepartment = () => {
 		resetDepartmentForm();
+		fetchDepartmentLeaders();
 		setDepartmentFormOpen(true);
 	};
 
 	const openEditDepartment = (row) => {
 		setDepartmentEditingId(row.id);
+		fetchDepartmentLeaders();
 		setDepartmentForm({
 			ten_phong: row.ten_phong || "",
+			truong_phong_id: row.truong_phong_id ?? "",
 		});
 		setDepartmentFormOpen(true);
 	};
@@ -816,6 +910,9 @@ function App() {
 
 		const payload = {
 			ten_phong: departmentForm.ten_phong.trim(),
+			truong_phong_id: departmentForm.truong_phong_id
+				? Number(departmentForm.truong_phong_id)
+				: null,
 		};
 
 		try {
@@ -834,6 +931,8 @@ function App() {
 			}
 			setDepartmentFormOpen(false);
 			resetDepartmentForm();
+			setEmployeeDepartments([]);
+			setProjectDepartments([]);
 			fetchDepartments(1);
 			setDepartmentStatus({ type: "success", message: "Lưu phòng ban thành công." });
 		} catch (error) {
@@ -902,8 +1001,8 @@ function App() {
 		});
 	};
 
-	const fetchTaskEmployees = async () => {
-		if (taskEmployees.length > 0) {
+	const fetchTaskEmployees = async (force = false) => {
+		if (!force && taskEmployees.length > 0) {
 			return;
 		}
 		setTaskEmployeesLoading(true);
@@ -927,8 +1026,19 @@ function App() {
 		}
 		setTaskProjectsLoading(true);
 		try {
+			const params = new URLSearchParams({
+				page: "1",
+				page_size: "200",
+			});
+			const actor = (user?.vai_tro || "").toLowerCase().includes("admin")
+				? "admin"
+				: "employee";
+			params.set("actor", actor);
+			if (actor === "employee" && user?.id) {
+				params.set("nhan_vien_id", String(user.id));
+			}
 			const response = await fetch(
-				`${API_BASE}/api/v1/du_an/danh_sach?page=1&page_size=200&actor=admin`
+				`${API_BASE}/api/v1/du_an/danh_sach?${params.toString()}`
 			);
 			const data = await response.json();
 			if (!response.ok) {
@@ -944,7 +1054,18 @@ function App() {
 
 	const openCreateTask = () => {
 		resetTaskForm();
-		fetchTaskEmployees();
+		const isAdminUser = (user?.vai_tro || "").toLowerCase().includes("admin");
+		if (isAdminUser) {
+			fetchTaskEmployees();
+		} else if (user?.id) {
+			setTaskEmployees([
+				{
+					id: user.id,
+					ho_ten: user.ho_ten || "Nhân viên",
+				},
+			]);
+			setTaskAssignees([user.id]);
+		}
 		fetchTaskProjects();
 		setTaskFormOpen(true);
 	};
@@ -1085,8 +1206,8 @@ function App() {
 		}
 	};
 
-	const fetchProjectDepartments = async () => {
-		if (projectDepartments.length > 0) {
+	const fetchProjectDepartments = async (force = false) => {
+		if (!force && projectDepartments.length > 0) {
 			return;
 		}
 		setProjectDepartmentsLoading(true);
@@ -1348,6 +1469,7 @@ function App() {
 					element={
 						<AttendancePage
 							user={user}
+							isAdmin={isAdmin}
 							attendanceToday={attendanceToday}
 							attendanceHistory={attendanceHistory}
 							attendanceStatus={attendanceStatus}
@@ -1426,6 +1548,8 @@ function App() {
 					path="/tasks"
 					element={
 						<TasksPage
+							user={user}
+							isAdmin={isAdmin}
 							taskRows={taskRows}
 							taskTotal={taskTotal}
 							taskQuery={taskQuery}
@@ -1452,10 +1576,12 @@ function App() {
 							setTaskSort={setTaskSort}
 							setTaskFormOpen={setTaskFormOpen}
 							setTaskForm={setTaskForm}
+							setTaskAssignees={setTaskAssignees}
 							setTaskProgressForm={setTaskProgressForm}
 							setTaskProgressOpen={setTaskProgressOpen}
 							resetTaskForm={resetTaskForm}
 							fetchTasks={fetchTasks}
+							fetchTaskEmployees={fetchTaskEmployees}
 							openCreateTask={openCreateTask}
 							toggleAssignee={toggleAssignee}
 							toggleFollower={toggleFollower}
@@ -1482,6 +1608,8 @@ function App() {
 							departmentFormOpen={departmentFormOpen}
 							departmentEditingId={departmentEditingId}
 							departmentForm={departmentForm}
+							departmentLeaders={departmentLeaders}
+							departmentLeadersLoading={departmentLeadersLoading}
 							departmentActionTarget={departmentActionTarget}
 							departmentTransferId={departmentTransferId}
 							setDepartmentQuery={setDepartmentQuery}
