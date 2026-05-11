@@ -10,7 +10,9 @@ import EmployeesPage from "./pages/EmployeesPage";
 import LeavePage from "./pages/LeavePage";
 import LoginPage from "./pages/LoginPage";
 import ProjectsPage from "./pages/ProjectsPage";
+import SalaryCalculatorPage from "./pages/SalaryCalculatorPage";
 import TasksPage from "./pages/TasksPage";
+import KpiCalculatorPage from "./pages/KpiCalculatorPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
@@ -429,6 +431,66 @@ function App() {
 			await fetchAttendanceHistory(nhan_vien_id);
 		} catch (error) {
 			setAttendanceStatus({ type: "error", message: error.message });
+		}
+	};
+
+	const submitAttendanceReport = async ({ cham_cong_id, noi_dung }) => {
+		if (!user?.id) {
+			return false;
+		}
+		setAttendanceStatus({ type: "", message: "" });
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/cham_cong/bao_cao`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					actor_id: user.id,
+					cham_cong_id,
+					noi_dung,
+				}),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the gui bao cao");
+			}
+			setAttendanceStatus({ type: "success", message: "Gui bao cao thanh cong." });
+			return true;
+		} catch (error) {
+			setAttendanceStatus({ type: "error", message: error.message });
+			return false;
+		}
+	};
+
+	const reviewAttendanceReport = async ({ cham_cong_id, action, ly_do }) => {
+		if (!user?.id) {
+			return false;
+		}
+		setAttendanceStatus({ type: "", message: "" });
+		try {
+			const endpoint =
+				action === "approve"
+					? `${API_BASE}/api/v1/cham_cong/bao_cao/${cham_cong_id}/duyet`
+					: `${API_BASE}/api/v1/cham_cong/bao_cao/${cham_cong_id}/tu_choi`;
+			const response = await fetch(endpoint, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					actor_id: user.id,
+					ly_do: ly_do || undefined,
+				}),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the xu ly bao cao");
+			}
+			setAttendanceStatus({
+				type: "success",
+				message: action === "approve" ? "Da duyet bao cao." : "Da tu choi bao cao.",
+			});
+			return true;
+		} catch (error) {
+			setAttendanceStatus({ type: "error", message: error.message });
+			return false;
 		}
 	};
 
@@ -1354,7 +1416,8 @@ function App() {
 		{ label: "Phòng ban", icon: "office", to: "/departments" },
 		{ label: "Chấm công", icon: "calendar", to: "/attendance" },
 		{ label: "Nghỉ phép", icon: "leave", to: "/leave" },
-		{ label: "Lương & KPI", icon: "salary", to: "/dashboard" },
+		{ label: "Tính KPI", icon: "report", to: "/kpi-calculator" },
+		{ label: "Tính lương", icon: "salary", to: "/salary-calculator" },
 	];
 
 	const adminMenuItems = [
@@ -1365,7 +1428,8 @@ function App() {
 		{ label: "Phòng ban", icon: "office", to: "/departments" },
 		{ label: "Chấm công", icon: "calendar", to: "/attendance" },
 		{ label: "Nghỉ phép", icon: "leave", to: "/leave" },
-		{ label: "Lương & KPI", icon: "salary", to: "/dashboard" },
+		{ label: "Tính KPI", icon: "report", to: "/kpi-calculator" },
+		{ label: "Tính lương", icon: "salary", to: "/salary-calculator" },
 	];
 
 	const iconMap = {
@@ -1427,6 +1491,7 @@ function App() {
 	};
 
 	const isAdmin = (user?.vai_tro || "").toLowerCase().includes("admin");
+	const isManager = (user?.vai_tro || "").toLowerCase().includes("quản lý");
 
 	if (!user) {
 		return (
@@ -1478,6 +1543,8 @@ function App() {
 							fetchAttendanceHistory={fetchAttendanceHistory}
 							submitCheckIn={submitCheckIn}
 							submitCheckOut={submitCheckOut}
+							submitAttendanceReport={submitAttendanceReport}
+							reviewAttendanceReport={reviewAttendanceReport}
 						/>
 					}
 				/>
@@ -1625,6 +1692,14 @@ function App() {
 							closeDepartmentAction={closeDepartmentAction}
 						/>
 					}
+				/>
+				<Route
+					path="/kpi-calculator"
+					element={<KpiCalculatorPage user={user} isAdmin={isAdmin} isManager={isManager} />}
+				/>
+				<Route
+					path="/salary-calculator"
+					element={<SalaryCalculatorPage user={user} isAdmin={isAdmin} isManager={isManager} />}
 				/>
 				<Route
 					path="/employees"

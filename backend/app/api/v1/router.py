@@ -14,7 +14,9 @@ from app.api.v1.endpoints import lich_su_cong_phep
 from app.api.v1.endpoints import lich_trinh
 from app.api.v1.endpoints import luong
 from app.api.v1.endpoints import luong_cau_hinh
+from app.api.v1.endpoints import luong_tinh_toan
 from app.api.v1.endpoints import luu_kpi
+from app.api.v1.endpoints import kpi_tinh_toan
 from app.api.v1.endpoints import ngay_nghi_le
 from app.api.v1.endpoints import ngay_phep_nam
 from app.api.v1.endpoints import nhan_su_lich_su
@@ -48,7 +50,9 @@ api_router.include_router(lich_su_cong_phep.router)
 api_router.include_router(lich_trinh.router)
 api_router.include_router(luong.router)
 api_router.include_router(luong_cau_hinh.router)
+api_router.include_router(luong_tinh_toan.router)
 api_router.include_router(luu_kpi.router)
+api_router.include_router(kpi_tinh_toan.router)
 api_router.include_router(ngay_nghi_le.router)
 api_router.include_router(ngay_phep_nam.router)
 api_router.include_router(nhan_su_lich_su.router)

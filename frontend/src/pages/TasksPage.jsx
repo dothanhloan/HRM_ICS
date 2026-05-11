@@ -101,7 +101,7 @@ function TasksPage({
 		if (user?.id) {
 			setTaskAssignees([user.id]);
 		}
-	}, [isAdmin, canAssignOthers, user?.id, fetchTaskEmployees, setTaskAssignees]);
+	}, [isAdmin, canAssignOthers, user?.id]);
 
 	const statusClassMap = useMemo(
 		() => ({

@@ -18,6 +18,8 @@ function AttendancePage({
 	fetchAttendanceHistory,
 	submitCheckIn,
 	submitCheckOut,
+	submitAttendanceReport,
+	reviewAttendanceReport,
 }) {
 	const [location, setLocation] = useState({
 		lat: null,
@@ -31,6 +33,9 @@ function AttendancePage({
 	const [wfhPromptOpen, setWfhPromptOpen] = useState(false);
 	const [month, setMonth] = useState(() => String(new Date().getMonth() + 1));
 	const [year, setYear] = useState(() => String(new Date().getFullYear()));
+	const [reportModalOpen, setReportModalOpen] = useState(false);
+	const [reportTarget, setReportTarget] = useState(null);
+	const [reportContent, setReportContent] = useState("");
 
 	useEffect(() => {
 		if (!user?.id) {
@@ -217,6 +222,104 @@ function AttendancePage({
 		fetchAttendanceHistory(user.id, 1, 31, startDate, endDate, isAdmin);
 	};
 
+	const refreshCurrentAttendance = () => {
+		handleFilter();
+		if (!isAdmin && user?.id) {
+			fetchAttendanceToday(user.id);
+		}
+	};
+
+	const openReportModal = (row) => {
+		setReportTarget(row);
+		setReportContent(row?.bao_cao_noi_dung || "");
+		setReportModalOpen(true);
+	};
+
+	const closeReportModal = () => {
+		setReportModalOpen(false);
+		setReportTarget(null);
+		setReportContent("");
+	};
+
+	const handleSubmitReport = async () => {
+		if (!reportTarget?.id) {
+			return;
+		}
+		const content = reportContent.trim();
+		if (!content) {
+			return;
+		}
+		const ok = await submitAttendanceReport({
+			cham_cong_id: reportTarget.id,
+			noi_dung: content,
+		});
+		if (ok) {
+			closeReportModal();
+			refreshCurrentAttendance();
+		}
+	};
+
+	const handleReviewReport = async (row, action) => {
+		if (!row?.id) {
+			return;
+		}
+		let lyDo = "";
+		if (action === "reject") {
+			lyDo = window.prompt("Nhập lý do từ chối báo cáo:", row.bao_cao_ly_do || "") || "";
+		}
+		const ok = await reviewAttendanceReport({
+			cham_cong_id: row.id,
+			action,
+			ly_do: lyDo,
+		});
+		if (ok) {
+			refreshCurrentAttendance();
+		}
+	};
+
+	const renderReportStatus = (status) => {
+		if (status === "APPROVED") {
+			return <span className="status-pill status-approved">Đã duyệt</span>;
+		}
+		if (status === "REJECTED") {
+			return <span className="status-pill status-rejected">Từ chối</span>;
+		}
+		if (status === "PENDING") {
+			return <span className="status-pill status-pending">Chờ duyệt</span>;
+		}
+		return <span className="status-pill status-muted">Chưa gửi</span>;
+	};
+
+	const getEmployeeReportButton = (item) => {
+		const status = item?.bao_cao_trang_thai;
+		const hasContent = Boolean((item?.bao_cao_noi_dung || "").trim());
+
+		if (status === "PENDING" || hasContent) {
+			return {
+				label: "",
+				disabled: true,
+				className: "btn-report btn-report-pending",
+				hidden: true,
+			};
+		}
+
+		if (status === "REJECTED") {
+			return {
+				label: "Gửi lại",
+				disabled: false,
+				className: "btn-report",
+				hidden: false,
+			};
+		}
+
+		return {
+			label: "Gửi báo cáo",
+			disabled: false,
+			className: "btn-report",
+			hidden: false,
+		};
+	};
+
 	const formatTime = (value) => {
 		if (!value || value === "-") {
 			return "-";
@@ -374,9 +477,51 @@ function AttendancePage({
 											</span>
 										</td>
 										<td>
-											<button type="button" className="btn-report">
-												Gửi báo cáo
-											</button>
+											<div className="attendance-report-cell">
+												{renderReportStatus(item.bao_cao_trang_thai)}
+												{isAdmin && item.bao_cao_noi_dung ? (
+													<p className="attendance-report-text">{item.bao_cao_noi_dung}</p>
+												) : null}
+												{isAdmin && item.bao_cao_ly_do ? (
+													<p className="attendance-report-note">Lý do: {item.bao_cao_ly_do}</p>
+												) : null}
+												{isAdmin ? (
+													item.bao_cao_trang_thai === "PENDING" ? (
+														<div className="attendance-report-actions">
+															<button
+																type="button"
+																className="btn-report"
+																onClick={() => handleReviewReport(item, "approve")}
+															>
+																Duyệt
+															</button>
+															<button
+																type="button"
+																className="btn-report ghost"
+																onClick={() => handleReviewReport(item, "reject")}
+															>
+																Từ chối
+															</button>
+														</div>
+													) : null
+												) : (() => {
+													const button = getEmployeeReportButton(item);
+													if (button.hidden) {
+														return null;
+													}
+													return (
+													<button
+														type="button"
+														className={button.className}
+														onClick={() => openReportModal(item)}
+														disabled={button.disabled}
+													>
+														{button.label}
+													</button>
+													);
+												})()
+											}
+											</div>
 										</td>
 									</tr>
 								))
@@ -385,6 +530,36 @@ function AttendancePage({
 					</table>
 				</div>
 			</div>
+
+			{reportModalOpen ? (
+				<div className="modal-backdrop">
+					<div className="modal">
+						<div className="modal-header">
+							<h3>Gửi báo cáo</h3>
+							<button type="button" className="ghost" onClick={closeReportModal}>
+								Đóng
+							</button>
+						</div>
+						<div className="form-group">
+							<label>Nội dung báo cáo</label>
+							<textarea
+								rows={6}
+								placeholder="Nhập nội dung báo cáo của bạn..."
+								value={reportContent}
+								onChange={(event) => setReportContent(event.target.value)}
+							/>
+						</div>
+						<div className="form-actions">
+							<button type="button" className="ghost" onClick={closeReportModal}>
+								Đóng
+							</button>
+							<button type="button" onClick={handleSubmitReport}>
+								Gửi báo cáo
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
 
 
 			{locationPromptOpen ? (
