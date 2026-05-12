@@ -27,6 +27,20 @@ class CongViecCreate(BaseModel):
 	nguoi_theo_doi_ids: Optional[list[int]] = None
 
 
+class CongViecUpdate(BaseModel):
+	ten_cong_viec: Optional[str] = None
+	mo_ta: Optional[str] = None
+	du_an_id: Optional[int] = None
+	ngay_bat_dau: Optional[str] = None
+	han_hoan_thanh: Optional[str] = None
+	muc_do_uu_tien: Optional[str] = None
+	trang_thai: Optional[str] = None
+	tai_lieu_cv: Optional[str] = None
+	nguoi_giao_id: Optional[int] = None
+	nguoi_nhan_ids: Optional[list[int]] = None
+	nguoi_theo_doi_ids: Optional[list[int]] = None
+
+
 class CongViecProgressUpdate(BaseModel):
 	trang_thai: str
 	phan_tram: int
@@ -73,16 +87,27 @@ def list_cong_viec(
 		SELECT
 			cv.id,
 			cv.ten_cong_viec,
-			da.ten_du_an,
+			MAX(cv.mo_ta) AS mo_ta,
+			MAX(cv.du_an_id) AS du_an_id,
+			MAX(da.ten_du_an) AS ten_du_an,
+			MAX(da.phong_ban) AS phong_ban,
+			MAX(cv.ngay_bat_dau) AS ngay_bat_dau,
+			MAX(cv.han_hoan_thanh) AS han_hoan_thanh,
+			MAX(cv.muc_do_uu_tien) AS muc_do_uu_tien,
+			MAX(cv.trang_thai) AS trang_thai,
+			MAX(cv.trang_thai_duyet) AS trang_thai_duyet,
+			MAX(cv.tai_lieu_cv) AS tai_lieu_cv,
+			MAX(cv.nguoi_giao_id) AS nguoi_giao_id,
+			MAX(nvg.ho_ten) AS nguoi_giao,
 			GROUP_CONCAT(DISTINCT nvnn.ho_ten SEPARATOR ', ') AS nguoi_nhan,
-			cv.han_hoan_thanh,
-			cv.trang_thai
+			GROUP_CONCAT(DISTINCT cvnn.nhan_vien_id SEPARATOR ',') AS nguoi_nhan_ids
 		FROM cong_viec cv
 		LEFT JOIN du_an da ON da.id = cv.du_an_id
+		LEFT JOIN nhanvien nvg ON nvg.id = cv.nguoi_giao_id
 		LEFT JOIN cong_viec_nguoi_nhan cvnn ON cvnn.cong_viec_id = cv.id
 		LEFT JOIN nhanvien nvnn ON nvnn.id = cvnn.nhan_vien_id
 		{where_sql}
-		GROUP BY cv.id, cv.ten_cong_viec, da.ten_du_an, cv.han_hoan_thanh, cv.trang_thai
+		GROUP BY cv.id, cv.ten_cong_viec
 		ORDER BY {order_by}
 		LIMIT :limit OFFSET :skip
 		"""
@@ -110,6 +135,102 @@ def list_cong_viec(
 		"page_size": resolved_limit,
 		"total_pages": total_pages,
 	}
+
+
+@router.put("/{cong_viec_id}/cap_nhat_thong_tin")
+def update_cong_viec(
+	cong_viec_id: int,
+	payload: CongViecUpdate,
+	db: Session = Depends(get_db),
+) -> dict:
+	exists = db.execute(
+		text("SELECT COUNT(*) FROM cong_viec WHERE id = :id"),
+		{"id": cong_viec_id},
+	).scalar()
+	if not exists:
+		raise HTTPException(status_code=404, detail="Not found")
+
+	current_row = db.execute(
+		text(
+			"""
+			SELECT du_an_id, ten_cong_viec, mo_ta, ngay_bat_dau, han_hoan_thanh,
+				muc_do_uu_tien, trang_thai, tai_lieu_cv, nguoi_giao_id
+			FROM cong_viec WHERE id = :id
+			"""
+		),
+		{"id": cong_viec_id},
+	).mappings().first()
+	if not current_row:
+		raise HTTPException(status_code=404, detail="Not found")
+
+	update_values = {
+		"du_an_id": payload.du_an_id if payload.du_an_id is not None else current_row["du_an_id"],
+		"ten_cong_viec": (payload.ten_cong_viec or current_row["ten_cong_viec"]).strip(),
+		"mo_ta": (payload.mo_ta or current_row["mo_ta"] or "").strip(),
+		"ngay_bat_dau": payload.ngay_bat_dau if payload.ngay_bat_dau is not None else current_row["ngay_bat_dau"],
+		"han_hoan_thanh": payload.han_hoan_thanh if payload.han_hoan_thanh is not None else current_row["han_hoan_thanh"],
+		"muc_do_uu_tien": payload.muc_do_uu_tien if payload.muc_do_uu_tien is not None else current_row["muc_do_uu_tien"],
+		"trang_thai": payload.trang_thai if payload.trang_thai is not None else current_row["trang_thai"],
+		"tai_lieu_cv": payload.tai_lieu_cv if payload.tai_lieu_cv is not None else current_row["tai_lieu_cv"],
+		"nguoi_giao_id": payload.nguoi_giao_id if payload.nguoi_giao_id is not None else current_row["nguoi_giao_id"],
+		"id": cong_viec_id,
+	}
+
+	if update_values["ngay_bat_dau"] is not None:
+		try:
+			date.fromisoformat(str(update_values["ngay_bat_dau"]))
+		except ValueError as exc:
+			raise HTTPException(status_code=400, detail="Invalid date format") from exc
+	if update_values["han_hoan_thanh"] is not None:
+		try:
+			date.fromisoformat(str(update_values["han_hoan_thanh"]))
+		except ValueError as exc:
+			raise HTTPException(status_code=400, detail="Invalid date format") from exc
+	if update_values["ngay_bat_dau"] and update_values["han_hoan_thanh"]:
+		if date.fromisoformat(str(update_values["han_hoan_thanh"])) < date.fromisoformat(str(update_values["ngay_bat_dau"])):
+			raise HTTPException(status_code=400, detail="Deadline before start date")
+
+	db.execute(
+		text(
+			"""
+			UPDATE cong_viec
+			SET du_an_id = :du_an_id,
+				ten_cong_viec = :ten_cong_viec,
+				mo_ta = :mo_ta,
+				ngay_bat_dau = :ngay_bat_dau,
+				han_hoan_thanh = :han_hoan_thanh,
+				muc_do_uu_tien = :muc_do_uu_tien,
+				trang_thai = :trang_thai,
+				tai_lieu_cv = :tai_lieu_cv,
+				nguoi_giao_id = :nguoi_giao_id
+			WHERE id = :id
+			"""
+		),
+		update_values,
+	)
+
+	member_ids = payload.nguoi_nhan_ids if payload.nguoi_nhan_ids is not None else []
+	member_ids = list({int(member_id) for member_id in member_ids})
+	db.execute(
+		text("DELETE FROM cong_viec_nguoi_nhan WHERE cong_viec_id = :id"),
+		{"id": cong_viec_id},
+	)
+	if member_ids:
+		db.execute(
+			text(
+				"""
+				INSERT INTO cong_viec_nguoi_nhan (cong_viec_id, nhan_vien_id)
+				VALUES (:cong_viec_id, :nhan_vien_id)
+				"""
+			),
+			[
+				{"cong_viec_id": cong_viec_id, "nhan_vien_id": member_id}
+				for member_id in member_ids
+			],
+		)
+
+	db.commit()
+	return {"status": "ok", "id": cong_viec_id}
 
 
 @router.post("/tao_moi")

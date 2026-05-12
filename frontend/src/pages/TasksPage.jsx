@@ -24,6 +24,7 @@ function TasksPage({
 	taskProgressOpen,
 	taskProgressForm,
 	taskForm,
+	taskEditingId,
 	setTaskQuery,
 	setTaskStatusFilter,
 	setTaskSort,
@@ -43,10 +44,122 @@ function TasksPage({
 	submitTaskProgress,
 	setTaskPageSize,
 	setTaskProgressTarget,
+	taskDetailOpen,
+	taskDetailTarget,
+	submitTaskStepForm,
+	submitTaskStepUpdate,
+	deleteTaskStep,
+	openTaskDetail,
+	closeTaskDetail,
+	taskWorkflowSteps,
+	taskWorkflowLoading,
 }) {
 	useEffect(() => {
 		fetchTasks(1);
 	}, []);
+
+	const [subtaskOpen, setSubtaskOpen] = useState(false);
+	const [subtaskEditingId, setSubtaskEditingId] = useState(null);
+	const [subtaskStatus, setSubtaskStatus] = useState({ type: "", message: "" });
+	const [subtaskForm, setSubtaskForm] = useState({
+		cong_viec_id: "",
+		ten_buoc: "",
+		mo_ta: "",
+		trang_thai: "Chưa bắt đầu",
+		ngay_bat_dau: "",
+		ngay_ket_thuc: "",
+		tai_lieu_link: "",
+		tai_lieu_file: "",
+	});
+	const [subtaskRecipients, setSubtaskRecipients] = useState([]);
+	const [showRecipientPicker, setShowRecipientPicker] = useState(false);
+
+	const openSubtaskModal = (step = null) => {
+		if (!taskDetailTarget?.id) {
+			return;
+		}
+		setSubtaskStatus({ type: "", message: "" });
+		setSubtaskForm({
+			cong_viec_id: taskDetailTarget.id,
+			ten_buoc: step?.ten_buoc || "",
+			mo_ta: step?.mo_ta || "",
+			trang_thai: step?.trang_thai || "Chưa bắt đầu",
+			ngay_bat_dau: step?.ngay_bat_dau || taskDetailTarget.ngay_bat_dau || "",
+			ngay_ket_thuc: step?.ngay_ket_thuc || taskDetailTarget.han_hoan_thanh || "",
+			tai_lieu_link: step?.tai_lieu_link || "",
+			tai_lieu_file: step?.tai_lieu_file || "",
+		});
+		setSubtaskRecipients(step ? [] : []);
+		setShowRecipientPicker(false);
+		setSubtaskEditingId(step?.id || null);
+		setSubtaskOpen(true);
+	};
+
+	const closeSubtaskModal = () => {
+		setSubtaskOpen(false);
+		setShowRecipientPicker(false);
+		setSubtaskEditingId(null);
+	};
+
+	const toggleSubtaskRecipient = (employeeId) => {
+		setSubtaskRecipients((prev) =>
+			prev.includes(employeeId)
+				? prev.filter((id) => id !== employeeId)
+				: [...prev, employeeId]
+		);
+	};
+
+	const handleSubtaskFileChange = (event) => {
+		const fileNames = Array.from(event.target.files || []).map((file) => file.name);
+		setSubtaskForm((prev) => ({
+			...prev,
+			tai_lieu_file: fileNames.join(", "),
+		}));
+	};
+
+	const handleSubmitSubtask = async () => {
+		setSubtaskStatus({ type: "", message: "" });
+		if (!subtaskForm.ten_buoc.trim()) {
+			setSubtaskStatus({ type: "error", message: "Vui lòng nhập tên bước/giai đoạn." });
+			return;
+		}
+		try {
+			const payload = {
+				...subtaskForm,
+				cong_viec_id: Number(subtaskForm.cong_viec_id),
+				nguoi_nhan_ids: subtaskRecipients,
+			};
+			if (subtaskEditingId) {
+				await submitTaskStepUpdate(subtaskEditingId, payload);
+			} else {
+				await submitTaskStepForm(payload);
+			}
+			setSubtaskOpen(false);
+			setSubtaskRecipients([]);
+			setSubtaskEditingId(null);
+			setSubtaskStatus({
+				type: "success",
+				message: subtaskEditingId ? "Cập nhật bước quy trình thành công." : "Thêm bước quy trình thành công.",
+			});
+		} catch (error) {
+			setSubtaskStatus({ type: "error", message: error.message });
+		}
+	};
+
+	const handleDeleteSubtask = async (step) => {
+		const confirmed = window.confirm(`Xóa bước quy trình "${step.ten_buoc}"?`);
+		if (!confirmed) {
+			return;
+		}
+		try {
+			await deleteTaskStep(step.id, step.cong_viec_id);
+			if (subtaskEditingId === step.id) {
+				closeSubtaskModal();
+			}
+		} catch (error) {
+			setSubtaskStatus({ type: "error", message: error.message });
+		}
+	};
 
 	const statusCounts = useMemo(() => {
 		const normalize = (value) =>
@@ -71,6 +184,22 @@ function TasksPage({
 			{ inProgress: 0, completed: 0, overdue: 0, notStarted: 0 }
 		);
 	}, [taskRows]);
+
+	const workflowProgress = useMemo(() => {
+		const normalize = (value) =>
+			String(value || "")
+				.toLowerCase()
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "");
+		if (!taskWorkflowSteps || taskWorkflowSteps.length === 0) {
+			return 0;
+		}
+		const completed = taskWorkflowSteps.filter((step) => {
+			const status = normalize(step.trang_thai);
+			return status.includes("hoan thanh") || status.includes("completed") || status.includes("done");
+		}).length;
+		return Math.min(100, Math.round((completed / taskWorkflowSteps.length) * 100));
+	}, [taskWorkflowSteps]);
 
 	const selectedProject = useMemo(() => {
 		const selectedId = taskForm.du_an_id ? String(taskForm.du_an_id) : "";
@@ -149,10 +278,10 @@ function TasksPage({
 							onChange={(event) => setTaskStatusFilter(event.target.value)}
 						>
 							<option value="">Tất cả trạng thái</option>
-							<option value="Chua bat dau">Chưa bắt đầu</option>
-							<option value="Dang thuc hien">Đang thực hiện</option>
-							<option value="Da hoan thanh">Đã hoàn thành</option>
-							<option value="Tre han">Trễ hạn</option>
+						<option value="Chưa bắt đầu">Chưa bắt đầu</option>
+						<option value="Đang thực hiện">Đang thực hiện</option>
+						<option value="Đã hoàn thành">Đã hoàn thành</option>
+						<option value="Trễ hạn">Trễ hạn</option>
 						</select>
 						<select value={taskSort} onChange={(event) => setTaskSort(event.target.value)}>
 							<option value="deadline">Sắp xếp theo deadline</option>
@@ -202,7 +331,7 @@ function TasksPage({
 				<div className="modal-backdrop">
 					<div className="modal">
 						<div className="modal-header">
-							<h3>Tạo công việc</h3>
+							<h3>{taskEditingId ? "Cập nhật công việc" : "Tạo công việc"}</h3>
 							<button
 								type="button"
 								className="ghost"
@@ -246,6 +375,25 @@ function TasksPage({
 									))}
 								</select>
 							</div>
+								<div className="form-group">
+									<label>Người giao</label>
+									<select
+										value={taskForm.nguoi_giao_id}
+										onChange={(event) =>
+											setTaskForm({
+												...taskForm,
+												nguoi_giao_id: event.target.value,
+											})
+										}
+									>
+										<option value="">Chọn người giao</option>
+										{taskEmployees.map((employee) => (
+											<option key={employee.id} value={employee.id}>
+												{employee.ho_ten}
+											</option>
+										))}
+									</select>
+								</div>
 							<div className="form-group">
 								<label>Ngày bắt đầu *</label>
 								<input
@@ -283,8 +431,8 @@ function TasksPage({
 										})
 									}
 								>
-									<option value="Thap">Thấp</option>
-									<option value="Trung binh">Trung bình</option>
+									<option value="Thấp">Thấp</option>
+									<option value="Trung bình">Trung bình</option>
 									<option value="Cao">Cao</option>
 								</select>
 							</div>
@@ -299,10 +447,10 @@ function TasksPage({
 										})
 									}
 								>
-									<option value="Chua bat dau">Chưa bắt đầu</option>
-									<option value="Dang thuc hien">Đang thực hiện</option>
-									<option value="Da hoan thanh">Đã hoàn thành</option>
-									<option value="Tre han">Trễ hạn</option>
+									<option value="Chưa bắt đầu">Chưa bắt đầu</option>
+									<option value="Đang thực hiện">Đang thực hiện</option>
+									<option value="Đã hoàn thành">Đã hoàn thành</option>
+									<option value="Trễ hạn">Trễ hạn</option>
 								</select>
 							</div>
 							<div className="form-group">
@@ -369,6 +517,11 @@ function TasksPage({
 								))}
 							</div>
 						</div>
+							<div className="task-subtask-action">
+								<button type="button" className="ghost task-subtask-button">
+									+ Thêm việc con
+								</button>
+							</div>
 						{taskProjectsLoading || taskEmployeesLoading ? (
 							<p>Đang tải danh sách liên quan...</p>
 						) : null}
@@ -379,7 +532,7 @@ function TasksPage({
 						) : null}
 						<div className="form-actions">
 							<button type="button" onClick={submitTaskForm}>
-								Lưu công việc
+								{taskEditingId ? "Lưu cập nhật" : "Lưu công việc"}
 							</button>
 							<button
 								type="button"
@@ -420,7 +573,7 @@ function TasksPage({
 							</tr>
 						) : (
 							taskRows.map((row) => (
-								<tr key={row.id}>
+								<tr key={row.id} onClick={() => openTaskDetail(row)} style={{ cursor: "pointer" }}>
 									<td>
 										<span className="data-emphasis">{row.id}</span>
 									</td>
@@ -445,7 +598,7 @@ function TasksPage({
 											{row.trang_thai || "-"}
 										</span>
 									</td>
-									<td>
+									<td onClick={(e) => e.stopPropagation()}>
 										<div className="row-actions">
 											<button type="button" onClick={() => openProgressModal(row)}>
 												Cập nhật
@@ -521,10 +674,10 @@ function TasksPage({
 										})
 									}
 								>
-									<option value="Chua bat dau">Chưa bắt đầu</option>
-									<option value="Dang thuc hien">Đang thực hiện</option>
-									<option value="Da hoan thanh">Đã hoàn thành</option>
-									<option value="Tre han">Trễ hạn</option>
+									<option value="Chưa bắt đầu">Chưa bắt đầu</option>
+									<option value="Đang thực hiện">Đang thực hiện</option>
+									<option value="Đã hoàn thành">Đã hoàn thành</option>
+									<option value="Trễ hạn">Trễ hạn</option>
 								</select>
 							</div>
 							<div className="form-group">
@@ -555,6 +708,356 @@ function TasksPage({
 									setTaskProgressTarget(null);
 								}}
 							>
+								Hủy
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
+			{taskDetailOpen && taskDetailTarget ? (
+				<div className="modal-backdrop">
+					<div className="modal task-detail-modal">
+						<div className="modal-header">
+							<h3>Thông tin công việc</h3>
+							<button
+								type="button"
+								className="ghost"
+								onClick={closeTaskDetail}
+							>
+								Đóng
+							</button>
+						</div>
+						<div className="task-detail-content">
+							{/* Thông tin công việc */}
+							<div className="detail-section">
+								<div className="section-icon">ℹ️</div>
+								<h4>Thông tin công việc</h4>
+								<div className="detail-form-grid">
+									<div className="form-group">
+										<label>Tên công việc</label>
+										<input 
+											type="text" 
+											value={taskDetailTarget.ten_cong_viec || ""} 
+											disabled 
+										/>
+									</div>
+									<div className="form-group">
+										<label>Mức độ ưu tiên</label>
+										<select disabled>
+											<option>{taskDetailTarget.muc_do_uu_tien || "Trung bình"}</option>
+										</select>
+									</div>
+									<div className="form-group full">
+										<label>Mô tả</label>
+										<textarea 
+											rows="4" 
+											value={taskDetailTarget.mo_ta || ""} 
+											disabled 
+										/>
+									</div>
+									<div className="form-group">
+										<label>Ngày bắt đầu</label>
+										<input 
+											type="date" 
+											value={taskDetailTarget.ngay_bat_dau || ""} 
+											disabled 
+										/>
+									</div>
+									<div className="form-group">
+										<label>Hạn hoàn thành</label>
+										<input 
+											type="date" 
+											value={taskDetailTarget.han_hoan_thanh || ""} 
+											disabled 
+										/>
+									</div>
+									<div className="form-group">
+										<label>Trạng thái</label>
+										<select disabled>
+											<option>{taskDetailTarget.trang_thai || "-"}</option>
+										</select>
+									</div>
+									<div className="form-group">
+										<label>Người giao</label>
+										<input 
+											type="text" 
+											value={taskDetailTarget.nguoi_giao || ""} 
+											disabled 
+										/>
+									</div>
+									<div className="form-group">
+										<label>Phòng ban</label>
+										<input 
+											type="text" 
+											value={taskDetailTarget.phong_ban || ""} 
+											disabled 
+										/>
+									</div>
+									<div className="form-group full">
+										<label>Trạng thái duyệt</label>
+										<input 
+											type="text" 
+											value={taskDetailTarget.trang_thai_duyet || "Chưa duyệt"} 
+											disabled 
+										/>
+									</div>
+									<div className="form-group full">
+										<label>Người nhận</label>
+										<div className="assignee-pills">
+											{taskDetailTarget.nguoi_nhan ? (
+												<span className="pill">{taskDetailTarget.nguoi_nhan}</span>
+											) : (
+												<span className="pill-placeholder">Chưa có người nhận</span>
+											)}
+										</div>
+									</div>
+									<div className="form-group full">
+										<label>Người theo dõi</label>
+										<div className="follower-placeholder">Thêm người theo dõi</div>
+									</div>
+									<div className="form-group full">
+										<label>Tài liệu công việc (Link Driver)</label>
+										<input 
+											type="text" 
+											placeholder="Chưa có link tài liệu" 
+											value={taskDetailTarget.tai_lieu_cv || ""} 
+											disabled 
+										/>
+									</div>
+									<div className="form-group full">
+										<label>File công việc</label>
+										<div className="file-upload-area">
+											<span>Choose Files</span>
+											<span>No file chosen</span>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							{/* Tiến độ công việc */}
+							<div className="detail-section">
+								<div className="section-icon">📊</div>
+								<h4>Tiến độ công việc</h4>
+								<div className="progress-section">
+									<label>Tiến độ:</label>
+									<div className="progress-bar">
+										<div className="progress-fill" style={{ width: `${workflowProgress}%` }}>{workflowProgress}%</div>
+									</div>
+									<button type="button" className="btn-add-subtask" onClick={openSubtaskModal}>+ Thêm việc con</button>
+									<div className="subtask-list">
+										{taskWorkflowLoading ? (
+											<div className="subtask-item">
+												<span>Đang tải...</span>
+											</div>
+										) : taskWorkflowSteps && taskWorkflowSteps.length > 0 ? (
+											taskWorkflowSteps.map((step) => (
+												<div key={step.id} className="subtask-item">
+													<span className="status-badge">
+														{step.trang_thai || "Chưa bắt đầu"}
+													</span>
+													<div className="subtask-details">
+														<strong>{step.ten_buoc}</strong>
+														{step.mo_ta && <p>{step.mo_ta}</p>}
+														{(step.ngay_bat_dau || step.ngay_ket_thuc) && (
+															<small>
+																{step.ngay_bat_dau && `Từ: ${step.ngay_bat_dau}`}
+																{step.ngay_bat_dau && step.ngay_ket_thuc && " - "}
+																{step.ngay_ket_thuc && `Đến: ${step.ngay_ket_thuc}`}
+															</small>
+														)}
+														<div className="subtask-actions">
+															<button type="button" className="btn-subtask-action" onClick={() => openSubtaskModal(step)}>
+																Sửa
+															</button>
+															<button type="button" className="btn-subtask-action danger" onClick={() => handleDeleteSubtask(step)}>
+																Xóa
+															</button>
+														</div>
+													</div>
+												</div>
+											))
+										) : (
+											<div className="subtask-item">
+												<span>Chưa có việc con nào</span>
+											</div>
+										)}
+									</div>
+								</div>
+							</div>
+
+							{/* Lịch sử công việc */}
+							<div className="detail-section">
+								<div className="section-icon">⏱️</div>
+								<h4>Lịch sử công việc</h4>
+								<div className="history-timeline">
+									<div className="history-item">
+										<div className="history-dot">1</div>
+										<div className="history-content">
+											<p className="history-text">Chưa có lịch sử thay đổi</p>
+											<small className="history-time">-</small>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							{/* Nút cập nhật tiến độ */}
+							{!isAdmin && (
+								<div className="detail-actions">
+									<button 
+										type="button" 
+										onClick={() => {
+											closeTaskDetail();
+											openProgressModal(taskDetailTarget);
+										}}
+										className="btn-primary"
+									>
+										Cập nhật tiến độ
+									</button>
+									<button 
+										type="button" 
+										onClick={closeTaskDetail}
+										className="btn-secondary"
+									>
+										Đóng
+									</button>
+								</div>
+							)}
+						</div>
+					</div>
+				</div>
+			) : null}
+			{subtaskOpen ? (
+				<div className="modal-backdrop">
+					<div className="modal subtask-modal">
+						<div className="modal-header">
+							<h3>{subtaskEditingId ? "Sửa bước quy trình" : "Thêm bước quy trình"}</h3>
+							<button type="button" className="ghost" onClick={closeSubtaskModal}>
+								Đóng
+							</button>
+						</div>
+						<div className="form-grid">
+							<div className="form-group full">
+								<label>Tên bước/giai đoạn</label>
+								<input
+									type="text"
+									value={subtaskForm.ten_buoc}
+									onChange={(event) =>
+										setSubtaskForm({ ...subtaskForm, ten_buoc: event.target.value })
+									}
+								/>
+							</div>
+							<div className="form-group full">
+								<label>Mô tả</label>
+								<textarea
+									rows="3"
+									value={subtaskForm.mo_ta}
+									onChange={(event) =>
+										setSubtaskForm({ ...subtaskForm, mo_ta: event.target.value })
+									}
+								/>
+							</div>
+							<div className="form-group full">
+								<label>Người nhận</label>
+								<div className="subtask-recipient-row">
+									<button
+										type="button"
+										className="task-subtask-button"
+										onClick={() => setShowRecipientPicker((prev) => !prev)}
+									>
+										+ Thêm người nhận
+									</button>
+									{showRecipientPicker ? (
+										<div className="subtask-recipient-picker">
+											{taskEmployees.map((employee) => (
+												<label key={employee.id} className="task-member-item">
+													<input
+														type="checkbox"
+														checked={subtaskRecipients.includes(employee.id)}
+														onChange={() => toggleSubtaskRecipient(employee.id)}
+													/>
+													<span>{employee.ho_ten}</span>
+												</label>
+											))}
+										</div>
+									) : null}
+								</div>
+								<div className="assignee-pills">
+									{subtaskRecipients.length > 0 ? (
+										subtaskRecipients.map((id) => {
+											const employee = taskEmployees.find((item) => item.id === id);
+											return (
+												<span key={id} className="pill">
+													{employee?.ho_ten || `NV ${id}`}
+												</span>
+											);
+										})
+									) : (
+										<span className="pill-placeholder">Chưa chọn người nhận</span>
+									)}
+								</div>
+							</div>
+							<div className="form-group full">
+								<label>Trạng thái</label>
+								<select
+									value={subtaskForm.trang_thai}
+									onChange={(event) =>
+										setSubtaskForm({ ...subtaskForm, trang_thai: event.target.value })
+									}
+								>
+									<option value="Chưa bắt đầu">Chưa bắt đầu</option>
+									<option value="Đang thực hiện">Đang thực hiện</option>
+									<option value="Đã hoàn thành">Đã hoàn thành</option>
+								</select>
+							</div>
+							<div className="form-group">
+								<label>Ngày bắt đầu</label>
+								<input
+									type="date"
+									value={subtaskForm.ngay_bat_dau}
+									onChange={(event) =>
+										setSubtaskForm({ ...subtaskForm, ngay_bat_dau: event.target.value })
+									}
+								/>
+							</div>
+							<div className="form-group">
+								<label>Ngày kết thúc</label>
+								<input
+									type="date"
+									value={subtaskForm.ngay_ket_thuc}
+									onChange={(event) =>
+										setSubtaskForm({ ...subtaskForm, ngay_ket_thuc: event.target.value })
+									}
+								/>
+							</div>
+							<div className="form-group full">
+								<label>Link tài liệu</label>
+								<input
+									type="url"
+									placeholder="https://..."
+									value={subtaskForm.tai_lieu_link}
+									onChange={(event) =>
+										setSubtaskForm({ ...subtaskForm, tai_lieu_link: event.target.value })
+									}
+								/>
+								<small className="helper-text">Link tài liệu tham khảo (Google Drive, Dropbox, v.v.)</small>
+							</div>
+							<div className="form-group full">
+								<label>File tài liệu</label>
+								<input type="file" multiple onChange={handleSubtaskFileChange} />
+								<small className="helper-text">Chọn một hoặc nhiều file (PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX)</small>
+								{subtaskForm.tai_lieu_file ? (
+									<p className="helper-text">Đã chọn: {subtaskForm.tai_lieu_file}</p>
+								) : null}
+							</div>
+						</div>
+						{subtaskStatus.message ? (
+							<div className={`alert ${subtaskStatus.type}`}>{subtaskStatus.message}</div>
+						) : null}
+						<div className="form-actions">
+							<button type="button" onClick={handleSubmitSubtask}>
+								{subtaskEditingId ? "Cập nhật bước" : "Thêm bước"}
+							</button>
+							<button type="button" className="ghost" onClick={closeSubtaskModal}>
 								Hủy
 							</button>
 						</div>

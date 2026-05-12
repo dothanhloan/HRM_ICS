@@ -97,17 +97,23 @@ function App() {
 	const [taskProgressOpen, setTaskProgressOpen] = useState(false);
 	const [taskProgressTarget, setTaskProgressTarget] = useState(null);
 	const [taskProgressForm, setTaskProgressForm] = useState({
-		trang_thai: "Dang thuc hien",
+		trang_thai: "Đang thực hiện",
 		phan_tram: 0,
 	});
+	const [taskDetailOpen, setTaskDetailOpen] = useState(false);
+	const [taskDetailTarget, setTaskDetailTarget] = useState(null);
+	const [taskEditingId, setTaskEditingId] = useState(null);
+	const [taskWorkflowSteps, setTaskWorkflowSteps] = useState([]);
+	const [taskWorkflowLoading, setTaskWorkflowLoading] = useState(false);
 	const [taskForm, setTaskForm] = useState({
 		ten_cong_viec: "",
 		mo_ta: "",
 		du_an_id: "",
+		nguoi_giao_id: "",
 		ngay_bat_dau: "",
 		han_hoan_thanh: "",
-		muc_do_uu_tien: "Trung binh",
-		trang_thai: "Chua bat dau",
+		muc_do_uu_tien: "Trung bình",
+		trang_thai: "Chưa bắt đầu",
 		tai_lieu_cv: "",
 	});
 	const [departmentRows, setDepartmentRows] = useState([]);
@@ -858,16 +864,23 @@ function App() {
 				params.set("trang_thai", taskStatusFilter);
 			}
 			params.set("sort_by", taskSort);
-			params.set("scope", "all");
-			params.set("page", String(nextPage));
-			params.set("page_size", String(taskPageSize));
+			
 			const actor = (user?.vai_tro || "").toLowerCase().includes("admin")
 				? "admin"
 				: "employee";
-			params.set("actor", actor);
+			
+			// Nhân viên chỉ xem công việc của mình
 			if (actor === "employee" && user?.id) {
+				params.set("scope", "mine");
 				params.set("nhan_vien_id", String(user.id));
+			} else {
+				params.set("scope", "all");
 			}
+			
+			params.set("page", String(nextPage));
+			params.set("page_size", String(taskPageSize));
+			params.set("actor", actor);
+			
 			const response = await fetch(
 				`${API_BASE}/api/v1/cong_viec/danh_sach?${params.toString()}`
 			);
@@ -1051,14 +1064,16 @@ function App() {
 		setTaskFormStatus({ type: "", message: "" });
 		setTaskAssignees([]);
 		setTaskFollowers([]);
+		setTaskEditingId(null);
 		setTaskForm({
 			ten_cong_viec: "",
 			mo_ta: "",
 			du_an_id: "",
+			nguoi_giao_id: "",
 			ngay_bat_dau: "",
 			han_hoan_thanh: "",
-			muc_do_uu_tien: "Trung binh",
-			trang_thai: "Chua bat dau",
+			muc_do_uu_tien: "Trung bình",
+			trang_thai: "Chưa bắt đầu",
 			tai_lieu_cv: "",
 		});
 	};
@@ -1116,7 +1131,11 @@ function App() {
 
 	const openCreateTask = () => {
 		resetTaskForm();
+		setTaskEditingId(null);
 		const isAdminUser = (user?.vai_tro || "").toLowerCase().includes("admin");
+		if (user?.id) {
+			setTaskForm((prev) => ({ ...prev, nguoi_giao_id: String(user.id) }));
+		}
 		if (isAdminUser) {
 			fetchTaskEmployees();
 		} else if (user?.id) {
@@ -1127,10 +1146,17 @@ function App() {
 				},
 			]);
 			setTaskAssignees([user.id]);
+			setTaskForm((prev) => ({ ...prev, nguoi_giao_id: user.id }));
 		}
 		fetchTaskProjects();
 		setTaskFormOpen(true);
 	};
+
+	const parseTaskIdList = (value) =>
+		String(value || "")
+			.split(",")
+			.map((item) => Number(item.trim()))
+			.filter((item) => Number.isFinite(item) && item > 0);
 
 	const toggleAssignee = (employeeId) => {
 		setTaskAssignees((prev) =>
@@ -1174,25 +1200,33 @@ function App() {
 		const payload = {
 			...taskForm,
 			du_an_id: taskForm.du_an_id ? Number(taskForm.du_an_id) : null,
-			nguoi_giao_id: user.id,
+			nguoi_giao_id: taskForm.nguoi_giao_id ? Number(taskForm.nguoi_giao_id) : user.id,
 			nguoi_nhan_ids: taskAssignees,
 			nguoi_theo_doi_ids: taskFollowers,
 		};
 
 		try {
-			const response = await fetch(`${API_BASE}/api/v1/cong_viec/tao_moi`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(payload),
-			});
+			const response = await fetch(
+				taskEditingId
+					? `${API_BASE}/api/v1/cong_viec/${taskEditingId}/cap_nhat_thong_tin`
+					: `${API_BASE}/api/v1/cong_viec/tao_moi`,
+				{
+					method: taskEditingId ? "PUT" : "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(payload),
+				}
+			);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tao cong viec");
+				throw new Error(data.detail || (taskEditingId ? "Khong the cap nhat cong viec" : "Khong the tao cong viec"));
 			}
 			setTaskFormOpen(false);
 			resetTaskForm();
 			fetchTasks(1);
-			setTaskStatus({ type: "success", message: "Tao cong viec thanh cong." });
+			setTaskStatus({
+				type: "success",
+				message: taskEditingId ? "Cap nhat cong viec thanh cong." : "Tao cong viec thanh cong.",
+			});
 		} catch (error) {
 			setTaskFormStatus({ type: "error", message: error.message });
 		}
@@ -1205,6 +1239,59 @@ function App() {
 			phan_tram: 0,
 		});
 		setTaskProgressOpen(true);
+	};
+
+	const fetchTaskWorkflowSteps = async (taskId) => {
+		try {
+			setTaskWorkflowLoading(true);
+			const response = await fetch(`${API_BASE}/api/v1/cong_viec_quy_trinh?skip=0&limit=1000&cong_viec_id=${taskId}`, {
+				method: "GET",
+				headers: { "Content-Type": "application/json" },
+			});
+			const data = await response.json();
+			if (response.ok) {
+				// The endpoint returns an array directly, filter by cong_viec_id
+				const steps = Array.isArray(data) ? data.filter((step) => Number(step.cong_viec_id) === Number(taskId)) : [];
+				setTaskWorkflowSteps(steps);
+			} else {
+				setTaskWorkflowSteps([]);
+			}
+		} catch (error) {
+			console.error("Error fetching workflow steps:", error);
+			setTaskWorkflowSteps([]);
+		} finally {
+			setTaskWorkflowLoading(false);
+		}
+	};
+
+	const openTaskDetail = (row) => {
+		const assigneeIds = parseTaskIdList(row.nguoi_nhan_ids);
+		setTaskDetailTarget(row);
+		setTaskDetailOpen(true);
+		setTaskEditingId(row.id);
+		fetchTaskEmployees(true);
+		fetchTaskProjects();
+		fetchTaskWorkflowSteps(row.id);
+		setTaskForm({
+			ten_cong_viec: row.ten_cong_viec || "",
+			mo_ta: row.mo_ta || "",
+			du_an_id: row.du_an_id ? String(row.du_an_id) : "",
+			nguoi_giao_id: row.nguoi_giao_id ? String(row.nguoi_giao_id) : "",
+			ngay_bat_dau: row.ngay_bat_dau || "",
+			han_hoan_thanh: row.han_hoan_thanh || "",
+			muc_do_uu_tien: row.muc_do_uu_tien || "Trung bình",
+			trang_thai: row.trang_thai || "Chưa bắt đầu",
+			tai_lieu_cv: row.tai_lieu_cv || "",
+		});
+		setTaskAssignees(assigneeIds);
+		setTaskFollowers(assigneeIds);
+		setTaskFormStatus({ type: "", message: "" });
+	};
+
+	const closeTaskDetail = () => {
+		setTaskDetailOpen(false);
+		setTaskDetailTarget(null);
+		setTaskEditingId(null);
 	};
 
 	const submitTaskProgress = async () => {
@@ -1230,6 +1317,68 @@ function App() {
 			setTaskStatus({ type: "success", message: "Cap nhat tien do thanh cong." });
 		} catch (error) {
 			setTaskStatus({ type: "error", message: error.message });
+		}
+	};
+
+	const submitTaskStepForm = async (payload) => {
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/cong_viec_quy_trinh/tao_moi`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tao buoc quy trinh");
+			}
+			fetchTasks(taskPage);
+			fetchTaskWorkflowSteps(payload.cong_viec_id);
+			setTaskStatus({ type: "success", message: "Them buoc quy trinh thanh cong." });
+			return data;
+		} catch (error) {
+			throw error;
+		}
+	};
+
+	const submitTaskStepUpdate = async (stepId, payload) => {
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/cong_viec_quy_trinh/${stepId}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the cap nhat buoc quy trinh");
+			}
+			fetchTasks(taskPage);
+			fetchTaskWorkflowSteps(payload.cong_viec_id);
+			setTaskStatus({ type: "success", message: "Cap nhat buoc quy trinh thanh cong." });
+			return data;
+		} catch (error) {
+			throw error;
+		}
+	};
+
+	const deleteTaskStep = async (stepId, taskId) => {
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/cong_viec_quy_trinh/${stepId}`, {
+				method: "DELETE",
+			});
+			if (!response.ok) {
+				let detail = "Khong the xoa buoc quy trinh";
+				try {
+					const data = await response.json();
+					detail = data.detail || detail;
+				} catch (_) {
+					// ignore empty delete responses
+				}
+				throw new Error(detail);
+			}
+			fetchTaskWorkflowSteps(taskId);
+			setTaskStatus({ type: "success", message: "Xoa buoc quy trinh thanh cong." });
+		} catch (error) {
+			throw error;
 		}
 	};
 
@@ -1638,6 +1787,7 @@ function App() {
 							taskProgressOpen={taskProgressOpen}
 							taskProgressForm={taskProgressForm}
 							taskForm={taskForm}
+							taskEditingId={taskEditingId}
 							setTaskQuery={setTaskQuery}
 							setTaskStatusFilter={setTaskStatusFilter}
 							setTaskSort={setTaskSort}
@@ -1655,8 +1805,17 @@ function App() {
 							submitTaskForm={submitTaskForm}
 							openProgressModal={openProgressModal}
 							submitTaskProgress={submitTaskProgress}
+							submitTaskStepForm={submitTaskStepForm}
+							submitTaskStepUpdate={submitTaskStepUpdate}
+							deleteTaskStep={deleteTaskStep}
 							setTaskPageSize={setTaskPageSize}
 							setTaskProgressTarget={setTaskProgressTarget}
+							taskDetailOpen={taskDetailOpen}
+							taskDetailTarget={taskDetailTarget}
+							openTaskDetail={openTaskDetail}
+							closeTaskDetail={closeTaskDetail}
+							taskWorkflowSteps={taskWorkflowSteps}
+							taskWorkflowLoading={taskWorkflowLoading}
 						/>
 					}
 				/>

@@ -300,23 +300,7 @@ function ProjectsPage({
 									))}
 								</select>
 							</div>
-							<div className="form-group">
-								<label>Trạng thái</label>
-								<select
-									value={projectForm.trang_thai_duan}
-									onChange={(event) =>
-										setProjectForm({
-											...projectForm,
-											trang_thai_duan: event.target.value,
-										})
-									}
-								>
-									<option value="Chưa bắt đầu">Chưa bắt đầu</option>
-									<option value="Đang thực hiện">Đang thực hiện</option>
-									<option value="Đã hoàn thành">Đã hoàn thành</option>
-									<option value="Trễ hạn">Trễ hạn</option>
-								</select>
-							</div>
+
 							<div className="form-group">
 								<label>Mô tả *</label>
 								<textarea
