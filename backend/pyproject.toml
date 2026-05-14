@@ -7,6 +7,7 @@ dependencies = [
     "cryptography",
     "fastapi",
     "pymysql",
+    "python-multipart",
     "sqlalchemy",
     "uvicorn[standard]",
 ]

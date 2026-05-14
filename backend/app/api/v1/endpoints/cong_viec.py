@@ -1,9 +1,12 @@
 from datetime import date
+import shutil
+from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -11,6 +14,7 @@ from app.api.v1.endpoints.crud_factory import create_crud_router
 from app.models.generated import CongViec
 
 router = APIRouter(prefix="/cong_viec", tags=["cong_viec"])
+UPLOAD_ROOT = Path(__file__).resolve().parents[4] / "uploads" / "cong_viec"
 
 
 class CongViecCreate(BaseModel):
@@ -39,11 +43,211 @@ class CongViecUpdate(BaseModel):
 	nguoi_giao_id: Optional[int] = None
 	nguoi_nhan_ids: Optional[list[int]] = None
 	nguoi_theo_doi_ids: Optional[list[int]] = None
+	nguoi_thay_doi_id: Optional[int] = None
 
 
 class CongViecProgressUpdate(BaseModel):
 	trang_thai: str
 	phan_tram: int
+
+
+def _normalize_task_value(value):
+	if value is None or value == "":
+		return "(chưa có)"
+	if isinstance(value, date):
+		return value.isoformat()
+	return str(value)
+
+
+def _unique_int_list(values):
+	result: list[int] = []
+	seen: set[int] = set()
+	for value in values or []:
+		if value is None:
+			continue
+		try:
+			member_id = int(value)
+		except (TypeError, ValueError):
+			continue
+		if member_id <= 0 or member_id in seen:
+			continue
+		seen.add(member_id)
+		result.append(member_id)
+	return result
+
+
+def _load_name_map(db: Session, table_name: str, ids: list[int], column_name: str = "ho_ten") -> dict[int, str]:
+	filtered_ids = _unique_int_list(ids)
+	if not filtered_ids:
+		return {}
+	query = text(
+		f"SELECT id, {column_name} AS label FROM {table_name} WHERE id IN :ids"
+	).bindparams(bindparam("ids", expanding=True))
+	rows = db.execute(query, {"ids": filtered_ids}).mappings().all()
+	return {int(row["id"]): str(row["label"]) for row in rows}
+
+
+def _format_id_list(ids: list[int], name_map: dict[int, str]) -> str:
+	formatted = [name_map.get(member_id, str(member_id)) for member_id in ids]
+	return ",".join(formatted) if formatted else "(chưa có)"
+
+
+def _build_task_history_message(current_row, update_values: dict, current_member_ids: list[int], next_member_ids: list[int], db: Session) -> str:
+	change_parts: list[str] = []
+	name_map = _load_name_map(
+		db,
+		"nhanvien",
+		[
+			current_row.get("nguoi_giao_id"),
+			update_values.get("nguoi_giao_id"),
+			*current_member_ids,
+			*next_member_ids,
+		],
+	)
+	project_map = _load_name_map(
+		db,
+		"du_an",
+		[current_row.get("du_an_id"), update_values.get("du_an_id")],
+		column_name="ten_du_an",
+	)
+
+	old_title = _normalize_task_value(current_row.get("ten_cong_viec"))
+	new_title = _normalize_task_value(update_values.get("ten_cong_viec"))
+	if old_title != new_title:
+		change_parts.append(f"📝 Đổi tên: '{old_title}' → '{new_title}'")
+
+	old_mo_ta = _normalize_task_value(current_row.get("mo_ta"))
+	new_mo_ta = _normalize_task_value(update_values.get("mo_ta"))
+	if old_mo_ta != new_mo_ta:
+		change_parts.append("📄 Cập nhật mô tả công việc")
+
+	old_start = _normalize_task_value(current_row.get("ngay_bat_dau"))
+	new_start = _normalize_task_value(update_values.get("ngay_bat_dau"))
+	if old_start != new_start:
+		change_parts.append(f"📅 Đổi ngày bắt đầu: '{old_start}' → '{new_start}'")
+
+	old_deadline = _normalize_task_value(current_row.get("han_hoan_thanh"))
+	new_deadline = _normalize_task_value(update_values.get("han_hoan_thanh"))
+	if old_deadline != new_deadline:
+		change_parts.append(f"📅 Đổi deadline: '{old_deadline}' → '{new_deadline}'")
+
+	old_priority = _normalize_task_value(current_row.get("muc_do_uu_tien"))
+	new_priority = _normalize_task_value(update_values.get("muc_do_uu_tien"))
+	if old_priority != new_priority:
+		change_parts.append(f"⚡ Đổi độ ưu tiên: '{old_priority}' → '{new_priority}'")
+
+	old_status = _normalize_task_value(current_row.get("trang_thai"))
+	new_status = _normalize_task_value(update_values.get("trang_thai"))
+	if old_status != new_status:
+		change_parts.append(f"🔄 Đổi trạng thái: '{old_status}' → '{new_status}'")
+
+	old_project = _normalize_task_value(project_map.get(current_row.get("du_an_id"), current_row.get("du_an_id")))
+	new_project = _normalize_task_value(project_map.get(update_values.get("du_an_id"), update_values.get("du_an_id")))
+	if old_project != new_project:
+		change_parts.append(f"🏢 Đổi dự án: '{old_project}' → '{new_project}'")
+
+	old_sender = _normalize_task_value(name_map.get(current_row.get("nguoi_giao_id"), current_row.get("nguoi_giao_id")))
+	new_sender = _normalize_task_value(name_map.get(update_values.get("nguoi_giao_id"), update_values.get("nguoi_giao_id")))
+	if old_sender != new_sender:
+		change_parts.append(f"👤 Đổi người giao: '{old_sender}' → '{new_sender}'")
+
+	old_assignees = _format_id_list(current_member_ids, name_map)
+	new_assignees = _format_id_list(next_member_ids, name_map)
+	if old_assignees != new_assignees:
+		change_parts.append(f"👥 Đổi người nhận: '{old_assignees}' → '{new_assignees}'")
+
+	old_link = _normalize_task_value(current_row.get("tai_lieu_cv"))
+	new_link = _normalize_task_value(update_values.get("tai_lieu_cv"))
+	if old_link != new_link:
+		change_parts.append("📎 Cập nhật link tài liệu")
+
+	return " | ".join(change_parts)
+
+
+@router.get("/{cong_viec_id}/lich_su")
+def list_task_history(
+	cong_viec_id: int,
+	nhan_vien_id: Optional[int] = None,
+	vai_tro: Optional[str] = None,
+	db: Session = Depends(get_db),
+) -> list[dict]:
+	# Kiểm tra quyền: admin xem được tất cả, nhân viên chỉ xem công việc của chính mình
+	is_admin = vai_tro and "admin" in vai_tro.lower()
+	
+	if not is_admin and nhan_vien_id:
+		# Kiểm tra xem nhân viên có quyền xem công việc này không
+		# (người giao hoặc người nhận)
+		access_check = db.execute(
+			text(
+				"""
+				SELECT 1
+				FROM cong_viec cv
+				LEFT JOIN cong_viec_nguoi_nhan cvnn ON cvnn.cong_viec_id = cv.id
+				WHERE cv.id = :cong_viec_id
+				  AND (cv.nguoi_giao_id = :nhan_vien_id OR cvnn.nhan_vien_id = :nhan_vien_id)
+				LIMIT 1
+				"""
+			),
+			{"cong_viec_id": cong_viec_id, "nhan_vien_id": nhan_vien_id},
+		).first()
+		
+		if not access_check:
+			raise HTTPException(status_code=403, detail="Khong co quyen xem lich su cong viec nay")
+	
+	rows = db.execute(
+		text(
+			"""
+			SELECT
+				cls.id,
+				cls.cong_viec_id,
+				cls.nguoi_thay_doi_id,
+				COALESCE(nv.ho_ten, CAST(cls.nguoi_thay_doi_id AS CHAR)) AS nguoi_thay_doi,
+				cls.mo_ta_thay_doi,
+				cls.thoi_gian
+			FROM cong_viec_lich_su cls
+			LEFT JOIN nhanvien nv ON nv.id = cls.nguoi_thay_doi_id
+			WHERE cls.cong_viec_id = :cong_viec_id
+			ORDER BY cls.thoi_gian DESC, cls.id DESC
+			"""
+		),
+		{"cong_viec_id": cong_viec_id},
+	).mappings().all()
+	return [dict(row) for row in rows]
+
+
+@router.post("/{cong_viec_id}/upload_tai_lieu")
+async def upload_task_attachment(
+	cong_viec_id: int,
+	file: UploadFile = File(...),
+	db: Session = Depends(get_db),
+) -> dict:
+	exists = db.execute(
+		text("SELECT COUNT(*) FROM cong_viec WHERE id = :id"),
+		{"id": cong_viec_id},
+	).scalar()
+	if not exists:
+		raise HTTPException(status_code=404, detail="Not found")
+
+	original_name = Path(file.filename or "tai_lieu").name
+	stored_name = f"{uuid4().hex}_{original_name}"
+	target_dir = UPLOAD_ROOT / str(cong_viec_id)
+	target_dir.mkdir(parents=True, exist_ok=True)
+	target_path = target_dir / stored_name
+
+	with target_path.open("wb") as buffer:
+		shutil.copyfileobj(file.file, buffer)
+
+	relative_path = f"uploads/cong_viec/{cong_viec_id}/{stored_name}"
+	db.execute(
+		text("UPDATE cong_viec SET tai_lieu_cv = :tai_lieu_cv WHERE id = :id"),
+		{"tai_lieu_cv": relative_path, "id": cong_viec_id},
+	)
+	db.commit()
+	return {
+		"status": "ok",
+		"tai_lieu_cv": relative_path,
+		"file_name": original_name,
+	}
 
 
 @router.get("/danh_sach")
@@ -163,6 +367,21 @@ def update_cong_viec(
 	if not current_row:
 		raise HTTPException(status_code=404, detail="Not found")
 
+	current_member_ids = [
+		int(row["nhan_vien_id"])
+		for row in db.execute(
+			text(
+				"""
+				SELECT nhan_vien_id
+				FROM cong_viec_nguoi_nhan
+				WHERE cong_viec_id = :id
+				ORDER BY id
+				"""
+			),
+			{"id": cong_viec_id},
+		).mappings().all()
+	]
+
 	update_values = {
 		"du_an_id": payload.du_an_id if payload.du_an_id is not None else current_row["du_an_id"],
 		"ten_cong_viec": (payload.ten_cong_viec or current_row["ten_cong_viec"]).strip(),
@@ -190,6 +409,9 @@ def update_cong_viec(
 		if date.fromisoformat(str(update_values["han_hoan_thanh"])) < date.fromisoformat(str(update_values["ngay_bat_dau"])):
 			raise HTTPException(status_code=400, detail="Deadline before start date")
 
+	next_member_ids = current_member_ids if payload.nguoi_nhan_ids is None else _unique_int_list(payload.nguoi_nhan_ids)
+	history_message = _build_task_history_message(current_row, update_values, current_member_ids, next_member_ids, db)
+
 	db.execute(
 		text(
 			"""
@@ -209,8 +431,7 @@ def update_cong_viec(
 		update_values,
 	)
 
-	member_ids = payload.nguoi_nhan_ids if payload.nguoi_nhan_ids is not None else []
-	member_ids = list({int(member_id) for member_id in member_ids})
+	member_ids = next_member_ids
 	db.execute(
 		text("DELETE FROM cong_viec_nguoi_nhan WHERE cong_viec_id = :id"),
 		{"id": cong_viec_id},
@@ -229,6 +450,21 @@ def update_cong_viec(
 			],
 		)
 
+	if history_message:
+		db.execute(
+			text(
+				"""
+				INSERT INTO cong_viec_lich_su (cong_viec_id, nguoi_thay_doi_id, mo_ta_thay_doi)
+				VALUES (:cong_viec_id, :nguoi_thay_doi_id, :mo_ta_thay_doi)
+				"""
+			),
+			{
+				"cong_viec_id": cong_viec_id,
+				"nguoi_thay_doi_id": payload.nguoi_thay_doi_id,
+				"mo_ta_thay_doi": history_message,
+			},
+		)
+
 	db.commit()
 	return {"status": "ok", "id": cong_viec_id}
 
@@ -237,6 +473,8 @@ def update_cong_viec(
 def create_cong_viec(payload: CongViecCreate, db: Session = Depends(get_db)) -> dict:
 	if not payload.ten_cong_viec.strip() or not payload.mo_ta.strip():
 		raise HTTPException(status_code=400, detail="Missing required fields")
+	if not payload.du_an_id:
+		raise HTTPException(status_code=400, detail="Missing project")
 	if not payload.nguoi_nhan_ids:
 		raise HTTPException(status_code=400, detail="Missing assignees")
 
@@ -248,6 +486,15 @@ def create_cong_viec(payload: CongViecCreate, db: Session = Depends(get_db)) -> 
 
 	if han_hoan_thanh < ngay_bat_dau:
 		raise HTTPException(status_code=400, detail="Deadline before start date")
+	if han_hoan_thanh < date.today():
+		raise HTTPException(status_code=400, detail="Deadline before today")
+
+	project = db.execute(
+		text("SELECT id, lead_id FROM du_an WHERE id = :id"),
+		{"id": payload.du_an_id},
+	).mappings().first()
+	if not project:
+		raise HTTPException(status_code=400, detail="Du an not found")
 
 	creator_exists = db.execute(
 		text("SELECT COUNT(*) FROM nhanvien WHERE id = :id"),
@@ -259,6 +506,13 @@ def create_cong_viec(payload: CongViecCreate, db: Session = Depends(get_db)) -> 
 	assignees = list({int(member_id) for member_id in payload.nguoi_nhan_ids})
 	followers = [int(member_id) for member_id in (payload.nguoi_theo_doi_ids or [])]
 	all_members = list({*assignees, *followers})
+	if all_members:
+		existing_members = db.execute(
+			text("SELECT COUNT(*) FROM nhanvien WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)),
+			{"ids": all_members},
+		).scalar() or 0
+		if existing_members != len(all_members):
+			raise HTTPException(status_code=400, detail="Nhan vien not found")
 
 	insert_query = text(
 		"""

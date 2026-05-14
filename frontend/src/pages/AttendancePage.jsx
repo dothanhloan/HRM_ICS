@@ -339,6 +339,37 @@ function AttendancePage({
 		return String(value);
 	};
 
+	const normalizeAttendanceStatus = (value) =>
+		String(value || "")
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "")
+			.toLowerCase();
+
+	const getAttendanceStatusClass = (value) => {
+		const status = normalizeAttendanceStatus(value);
+		if (status.includes("tre") || status.includes("muon")) {
+			return "status-pending";
+		}
+		if (status.includes("thieu")) {
+			return "status-rejected";
+		}
+		if (status.includes("vang") || status.includes("nghi") || status.includes("khong co mat")) {
+			return "status-muted";
+		}
+		if (status.includes("wfh") || status.includes("tu xa")) {
+			return "status-inprogress";
+		}
+		if (
+			status.includes("du_cong") ||
+			status.includes("du cong") ||
+			status.includes("dung_gio") ||
+			status.includes("dung gio")
+		) {
+			return "status-success";
+		}
+		return "status-muted";
+	};
+
 	return (
 		<section className="attendance-page">
 			{!isAdmin ? (
@@ -442,38 +473,57 @@ function AttendancePage({
 				</div>
 
 				<div className="attendance-table">
-					<table>
+					<table aria-label="Bang cham cong">
 						<thead>
 							<tr>
-								{isAdmin ? <th>Nhân viên</th> : null}
-								<th>Ngày</th>
-								<th>Check-in</th>
-								<th>Check-out</th>
-								<th>Số giờ</th>
-								<th>Trạng thái</th>
-								<th>Báo cáo</th>
+								{isAdmin ? <th scope="col">Nhân viên</th> : null}
+								<th scope="col">Ngày</th>
+								<th scope="col">Check-in</th>
+								<th scope="col">Check-out</th>
+								<th scope="col">Số giờ</th>
+								<th scope="col">Trạng thái</th>
+								<th scope="col">Báo cáo</th>
 							</tr>
 						</thead>
 						<tbody>
 							{attendanceLoading ? (
 								<tr>
-									<td colSpan={isAdmin ? 7 : 6}>Đang tải dữ liệu...</td>
+									<td className="attendance-empty-state" colSpan={isAdmin ? 7 : 6}>
+										Đang tải dữ liệu...
+									</td>
 								</tr>
 							) : historyRows.length === 0 ? (
 								<tr>
-									<td colSpan={isAdmin ? 7 : 6}>Chưa có dữ liệu chấm công.</td>
+									<td className="attendance-empty-state" colSpan={isAdmin ? 7 : 6}>
+										Chưa có dữ liệu chấm công.
+									</td>
 								</tr>
 							) : (
-								historyRows.map((item) => (
+								historyRows.map((item) => {
+									const attendanceStatusValue =
+										item.trang_thai_hien_tai || item.trang_thai || "-";
+									return (
 									<tr key={item.id}>
-										{isAdmin ? <td>{item.ho_ten || item.nhan_vien_id}</td> : null}
-										<td>{item.ngay || "-"}</td>
-										<td>{formatTime(item.check_in)}</td>
-										<td>{formatTime(item.check_out)}</td>
-										<td>{item.so_gio_lam ?? "-"}</td>
+										{isAdmin ? (
+											<td className="attendance-employee-cell">
+												<strong>{item.ho_ten || item.nhan_vien_id}</strong>
+											</td>
+										) : null}
+										<td className="attendance-date-cell">{item.ngay || "-"}</td>
+										<td className="attendance-time-cell">{formatTime(item.check_in)}</td>
+										<td className="attendance-time-cell">{formatTime(item.check_out)}</td>
 										<td>
-											<span className="status-pill status-success">
-												{item.trang_thai_hien_tai || item.trang_thai || "-"}
+											<span className="attendance-hours-badge">
+												{item.so_gio_lam ?? "-"}
+											</span>
+										</td>
+										<td>
+											<span
+												className={`status-pill ${getAttendanceStatusClass(
+													attendanceStatusValue
+												)}`}
+											>
+												{attendanceStatusValue}
 											</span>
 										</td>
 										<td>
@@ -524,7 +574,8 @@ function AttendancePage({
 											</div>
 										</td>
 									</tr>
-								))
+									);
+								})
 							)}
 						</tbody>
 					</table>

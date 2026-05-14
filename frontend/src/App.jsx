@@ -63,6 +63,8 @@ function App() {
 	const [projectTotal, setProjectTotal] = useState(0);
 	const [projectQuery, setProjectQuery] = useState("");
 	const [projectStatusFilter, setProjectStatusFilter] = useState("");
+	const [projectPriorityFilter, setProjectPriorityFilter] = useState("");
+	const [projectLeadFilter, setProjectLeadFilter] = useState("");
 	const [projectStatus, setProjectStatus] = useState({ type: "", message: "" });
 	const [projectLoading, setProjectLoading] = useState(false);
 	const [projectPage, setProjectPage] = useState(1);
@@ -70,6 +72,7 @@ function App() {
 	const [projectTotalPages, setProjectTotalPages] = useState(0);
 	const [projectFormOpen, setProjectFormOpen] = useState(false);
 	const [projectEditingId, setProjectEditingId] = useState(null);
+	const [projectFormReadOnly, setProjectFormReadOnly] = useState(false);
 	const [projectFormStatus, setProjectFormStatus] = useState({ type: "", message: "" });
 	const [projectEmployees, setProjectEmployees] = useState([]);
 	const [projectEmployeesLoading, setProjectEmployeesLoading] = useState(false);
@@ -90,6 +93,7 @@ function App() {
 	const [taskFormStatus, setTaskFormStatus] = useState({ type: "", message: "" });
 	const [taskAssignees, setTaskAssignees] = useState([]);
 	const [taskFollowers, setTaskFollowers] = useState([]);
+	const [taskUploadFile, setTaskUploadFile] = useState(null);
 	const [taskEmployees, setTaskEmployees] = useState([]);
 	const [taskEmployeesLoading, setTaskEmployeesLoading] = useState(false);
 	const [taskProjects, setTaskProjects] = useState([]);
@@ -105,6 +109,8 @@ function App() {
 	const [taskEditingId, setTaskEditingId] = useState(null);
 	const [taskWorkflowSteps, setTaskWorkflowSteps] = useState([]);
 	const [taskWorkflowLoading, setTaskWorkflowLoading] = useState(false);
+	const [taskHistoryLogs, setTaskHistoryLogs] = useState([]);
+	const [taskHistoryLoading, setTaskHistoryLoading] = useState(false);
 	const [taskForm, setTaskForm] = useState({
 		ten_cong_viec: "",
 		mo_ta: "",
@@ -238,11 +244,14 @@ function App() {
 		setProjectTotal(0);
 		setProjectQuery("");
 		setProjectStatusFilter("");
+		setProjectPriorityFilter("");
+		setProjectLeadFilter("");
 		setProjectStatus({ type: "", message: "" });
 		setProjectPage(1);
 		setProjectTotalPages(0);
 		setProjectFormOpen(false);
 		setProjectEditingId(null);
+		setProjectFormReadOnly(false);
 		setProjectFormStatus({ type: "", message: "" });
 		setProjectEmployees([]);
 		setProjectDepartments([]);
@@ -263,6 +272,8 @@ function App() {
 		setTaskProjects([]);
 		setTaskProgressOpen(false);
 		setTaskProgressTarget(null);
+		setTaskHistoryLogs([]);
+		setTaskHistoryLoading(false);
 		setDepartmentRows([]);
 		setDepartmentTotal(0);
 		setDepartmentQuery("");
@@ -809,17 +820,27 @@ function App() {
 		}
 	};
 
-	const fetchProjects = async (pageOverride) => {
+	const fetchProjects = async (pageOverride, filtersOverride = {}) => {
 		setProjectLoading(true);
 		setProjectStatus({ type: "", message: "" });
 		try {
 			const nextPage = pageOverride ?? projectPage;
+			const queryValue = filtersOverride.projectQuery ?? projectQuery;
+			const statusValue = filtersOverride.projectStatusFilter ?? projectStatusFilter;
+			const priorityValue = filtersOverride.projectPriorityFilter ?? projectPriorityFilter;
+			const leadValue = filtersOverride.projectLeadFilter ?? projectLeadFilter;
 			const params = new URLSearchParams();
-			if (projectQuery.trim()) {
-				params.set("q", projectQuery.trim());
+			if (queryValue.trim()) {
+				params.set("q", queryValue.trim());
 			}
-			if (projectStatusFilter) {
-				params.set("trang_thai", projectStatusFilter);
+			if (statusValue) {
+				params.set("trang_thai", statusValue);
+			}
+			if (priorityValue) {
+				params.set("muc_do_uu_tien", priorityValue);
+			}
+			if (leadValue) {
+				params.set("lead_id", leadValue);
 			}
 			params.set("page", String(nextPage));
 			params.set("page_size", String(projectPageSize));
@@ -1064,6 +1085,8 @@ function App() {
 		setTaskFormStatus({ type: "", message: "" });
 		setTaskAssignees([]);
 		setTaskFollowers([]);
+		setTaskUploadFile(null);
+		setTaskUploadFile(null);
 		setTaskEditingId(null);
 		setTaskForm({
 			ten_cong_viec: "",
@@ -1099,7 +1122,7 @@ function App() {
 
 	const fetchTaskProjects = async () => {
 		if (taskProjects.length > 0) {
-			return;
+			return taskProjects;
 		}
 		setTaskProjectsLoading(true);
 		try {
@@ -1121,24 +1144,39 @@ function App() {
 			if (!response.ok) {
 				throw new Error(data.detail || "Khong the tai danh sach du an");
 			}
-			setTaskProjects(data.data || []);
+			const projects = data.data || [];
+			setTaskProjects(projects);
+			return projects;
 		} catch (error) {
 			setTaskFormStatus({ type: "error", message: error.message });
+			return [];
 		} finally {
 			setTaskProjectsLoading(false);
 		}
 	};
 
-	const openCreateTask = () => {
+	const openCreateTask = async () => {
 		resetTaskForm();
 		setTaskEditingId(null);
+		setTaskStatus({ type: "", message: "" });
+		setTaskFormStatus({ type: "", message: "" });
 		const isAdminUser = (user?.vai_tro || "").toLowerCase().includes("admin");
 		if (user?.id) {
 			setTaskForm((prev) => ({ ...prev, nguoi_giao_id: String(user.id) }));
 		}
-		if (isAdminUser) {
-			fetchTaskEmployees();
-		} else if (user?.id) {
+		const projects = await fetchTaskProjects();
+		if (!isAdminUser && projects.length === 0) {
+			setTaskStatus({
+				type: "error",
+				message: "Ban chua phu trach du an nao nen khong the tao cong viec.",
+			});
+			return;
+		}
+		fetchTaskEmployees(true);
+		if (!isAdminUser && user?.id) {
+			setTaskForm((prev) => ({ ...prev, nguoi_giao_id: String(user.id) }));
+		}
+		if (false && user?.id) {
 			setTaskEmployees([
 				{
 					id: user.id,
@@ -1148,7 +1186,7 @@ function App() {
 			setTaskAssignees([user.id]);
 			setTaskForm((prev) => ({ ...prev, nguoi_giao_id: user.id }));
 		}
-		fetchTaskProjects();
+		setTaskUploadFile(null);
 		setTaskFormOpen(true);
 	};
 
@@ -1174,18 +1212,49 @@ function App() {
 		);
 	};
 
-	const submitTaskForm = async () => {
+	const handleTaskUploadChange = (event) => {
+		setTaskUploadFile(event.target.files?.[0] || null);
+	};
+
+	const uploadTaskAttachment = async (taskId, file) => {
+		if (!taskId || !file) {
+			return null;
+		}
+		const formData = new FormData();
+		formData.append("file", file);
+		const response = await fetch(`${API_BASE}/api/v1/cong_viec/${taskId}/upload_tai_lieu`, {
+			method: "POST",
+			body: formData,
+		});
+		const data = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			throw new Error(data.detail || "Khong the tai file cong viec");
+		}
+		return data.tai_lieu_cv || null;
+	};
+
+	const submitTaskForm = async (closeDetailOnSuccess = false) => {
 		setTaskFormStatus({ type: "", message: "" });
 		if (!taskForm.ten_cong_viec.trim() || !taskForm.mo_ta.trim()) {
 			setTaskFormStatus({ type: "error", message: "Vui long nhap ten va mo ta." });
+			return;
+		}
+		if (!taskForm.du_an_id) {
+			setTaskFormStatus({ type: "error", message: "Vui long chon du an." });
 			return;
 		}
 		if (!taskForm.ngay_bat_dau || !taskForm.han_hoan_thanh) {
 			setTaskFormStatus({ type: "error", message: "Vui long chon thoi gian." });
 			return;
 		}
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
 		if (new Date(taskForm.han_hoan_thanh) < new Date(taskForm.ngay_bat_dau)) {
 			setTaskFormStatus({ type: "error", message: "Deadline phai sau ngay bat dau." });
+			return;
+		}
+		if (new Date(taskForm.han_hoan_thanh) < today) {
+			setTaskFormStatus({ type: "error", message: "Deadline khong duoc nho hon ngay hien tai." });
 			return;
 		}
 		if (taskAssignees.length === 0) {
@@ -1203,7 +1272,17 @@ function App() {
 			nguoi_giao_id: taskForm.nguoi_giao_id ? Number(taskForm.nguoi_giao_id) : user.id,
 			nguoi_nhan_ids: taskAssignees,
 			nguoi_theo_doi_ids: taskFollowers,
+			nguoi_thay_doi_id: user.id,
 		};
+
+		if (taskEditingId && taskUploadFile) {
+			try {
+				payload.tai_lieu_cv = await uploadTaskAttachment(taskEditingId, taskUploadFile);
+			} catch (error) {
+				setTaskFormStatus({ type: "error", message: error.message });
+				return;
+			}
+		}
 
 		try {
 			const response = await fetch(
@@ -1220,12 +1299,22 @@ function App() {
 			if (!response.ok) {
 				throw new Error(data.detail || (taskEditingId ? "Khong the cap nhat cong viec" : "Khong the tao cong viec"));
 			}
+			if (!taskEditingId && taskUploadFile && data.id) {
+				await uploadTaskAttachment(data.id, taskUploadFile);
+			}
 			setTaskFormOpen(false);
+			if (closeDetailOnSuccess) {
+				closeTaskDetail();
+			}
 			resetTaskForm();
 			fetchTasks(1);
+			if (taskEditingId) {
+				fetchTaskHistory(taskEditingId);
+				fetchTaskWorkflowSteps(taskEditingId);
+			}
 			setTaskStatus({
 				type: "success",
-				message: taskEditingId ? "Cap nhat cong viec thanh cong." : "Tao cong viec thanh cong.",
+				message: taskEditingId ? "Cập nhật công việc thành công." : "Tạo công việc thành công.",
 			});
 		} catch (error) {
 			setTaskFormStatus({ type: "error", message: error.message });
@@ -1264,14 +1353,40 @@ function App() {
 		}
 	};
 
+	const fetchTaskHistory = async (taskId) => {
+		if (!taskId) {
+			setTaskHistoryLogs([]);
+			return;
+		}
+		setTaskHistoryLoading(true);
+		try {
+			const params = new URLSearchParams();
+			if (user?.id) params.set("nhan_vien_id", String(user.id));
+			if (user?.vai_tro) params.set("vai_tro", user.vai_tro);
+			const response = await fetch(`${API_BASE}/api/v1/cong_viec/${taskId}/lich_su?${params}`);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai lich su cong viec");
+			}
+			setTaskHistoryLogs(Array.isArray(data) ? data : []);
+		} catch (error) {
+			setTaskHistoryLogs([]);
+			setTaskStatus({ type: "error", message: error.message });
+		} finally {
+			setTaskHistoryLoading(false);
+		}
+	};
+
 	const openTaskDetail = (row) => {
 		const assigneeIds = parseTaskIdList(row.nguoi_nhan_ids);
 		setTaskDetailTarget(row);
 		setTaskDetailOpen(true);
 		setTaskEditingId(row.id);
+		setTaskUploadFile(null);
 		fetchTaskEmployees(true);
 		fetchTaskProjects();
 		fetchTaskWorkflowSteps(row.id);
+		fetchTaskHistory(row.id);
 		setTaskForm({
 			ten_cong_viec: row.ten_cong_viec || "",
 			mo_ta: row.mo_ta || "",
@@ -1292,6 +1407,8 @@ function App() {
 		setTaskDetailOpen(false);
 		setTaskDetailTarget(null);
 		setTaskEditingId(null);
+		setTaskUploadFile(null);
+		setTaskHistoryLogs([]);
 	};
 
 	const submitTaskProgress = async () => {
@@ -1325,7 +1442,7 @@ function App() {
 			const response = await fetch(`${API_BASE}/api/v1/cong_viec_quy_trinh/tao_moi`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(payload),
+				body: JSON.stringify({ ...payload, nguoi_thay_doi_id: user?.id || null }),
 			});
 			const data = await response.json();
 			if (!response.ok) {
@@ -1333,6 +1450,7 @@ function App() {
 			}
 			fetchTasks(taskPage);
 			fetchTaskWorkflowSteps(payload.cong_viec_id);
+			fetchTaskHistory(payload.cong_viec_id);
 			setTaskStatus({ type: "success", message: "Them buoc quy trinh thanh cong." });
 			return data;
 		} catch (error) {
@@ -1342,10 +1460,10 @@ function App() {
 
 	const submitTaskStepUpdate = async (stepId, payload) => {
 		try {
-			const response = await fetch(`${API_BASE}/api/v1/cong_viec_quy_trinh/${stepId}`, {
+			const response = await fetch(`${API_BASE}/api/v1/cong_viec_quy_trinh/${stepId}/cap_nhat`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(payload),
+				body: JSON.stringify({ ...payload, nguoi_thay_doi_id: user?.id || null }),
 			});
 			const data = await response.json();
 			if (!response.ok) {
@@ -1353,6 +1471,7 @@ function App() {
 			}
 			fetchTasks(taskPage);
 			fetchTaskWorkflowSteps(payload.cong_viec_id);
+			fetchTaskHistory(payload.cong_viec_id);
 			setTaskStatus({ type: "success", message: "Cap nhat buoc quy trinh thanh cong." });
 			return data;
 		} catch (error) {
@@ -1362,7 +1481,11 @@ function App() {
 
 	const deleteTaskStep = async (stepId, taskId) => {
 		try {
-			const response = await fetch(`${API_BASE}/api/v1/cong_viec_quy_trinh/${stepId}`, {
+			const params = new URLSearchParams();
+			if (user?.id) {
+				params.set("nguoi_thay_doi_id", String(user.id));
+			}
+			const response = await fetch(`${API_BASE}/api/v1/cong_viec_quy_trinh/${stepId}/xoa?${params.toString()}`, {
 				method: "DELETE",
 			});
 			if (!response.ok) {
@@ -1376,6 +1499,7 @@ function App() {
 				throw new Error(detail);
 			}
 			fetchTaskWorkflowSteps(taskId);
+			fetchTaskHistory(taskId);
 			setTaskStatus({ type: "success", message: "Xoa buoc quy trinh thanh cong." });
 		} catch (error) {
 			throw error;
@@ -1384,6 +1508,7 @@ function App() {
 
 	const resetProjectForm = () => {
 		setProjectEditingId(null);
+		setProjectFormReadOnly(false);
 		setProjectFormStatus({ type: "", message: "" });
 		setProjectForm({
 			ten_du_an: "",
@@ -1442,10 +1567,11 @@ function App() {
 		resetProjectForm();
 		fetchProjectEmployees();
 		fetchProjectDepartments();
+		setProjectFormReadOnly(false);
 		setProjectFormOpen(true);
 	};
 
-	const openEditProject = async (row) => {
+	const openEditProject = async (row, readOnly = false) => {
 		setProjectFormStatus({ type: "", message: "" });
 		fetchProjectEmployees();
 		fetchProjectDepartments();
@@ -1456,6 +1582,7 @@ function App() {
 				throw new Error(data.detail || "Khong the tai du an");
 			}
 			setProjectEditingId(row.id);
+			setProjectFormReadOnly(readOnly);
 			setProjectForm({
 				ten_du_an: data.ten_du_an || "",
 				mo_ta: data.mo_ta || "",
@@ -1730,6 +1857,8 @@ function App() {
 							projectTotal={projectTotal}
 							projectQuery={projectQuery}
 							projectStatusFilter={projectStatusFilter}
+							projectPriorityFilter={projectPriorityFilter}
+							projectLeadFilter={projectLeadFilter}
 							projectStatus={projectStatus}
 							projectLoading={projectLoading}
 							projectPage={projectPage}
@@ -1737,6 +1866,7 @@ function App() {
 							projectTotalPages={projectTotalPages}
 							projectFormOpen={projectFormOpen}
 							projectEditingId={projectEditingId}
+							projectFormReadOnly={projectFormReadOnly}
 							projectForm={projectForm}
 							projectEmployees={projectEmployees}
 							projectEmployeesLoading={projectEmployeesLoading}
@@ -1746,11 +1876,14 @@ function App() {
 							projectDeleteTarget={projectDeleteTarget}
 							setProjectQuery={setProjectQuery}
 							setProjectStatusFilter={setProjectStatusFilter}
+							setProjectPriorityFilter={setProjectPriorityFilter}
+							setProjectLeadFilter={setProjectLeadFilter}
 							setProjectPageSize={setProjectPageSize}
 							setProjectFormOpen={setProjectFormOpen}
 							setProjectForm={setProjectForm}
 							resetProjectForm={resetProjectForm}
 							fetchProjects={fetchProjects}
+							fetchProjectEmployees={fetchProjectEmployees}
 							openCreateProject={openCreateProject}
 							openEditProject={openEditProject}
 							submitProjectForm={submitProjectForm}
@@ -1794,6 +1927,7 @@ function App() {
 							setTaskFormOpen={setTaskFormOpen}
 							setTaskForm={setTaskForm}
 							setTaskAssignees={setTaskAssignees}
+							setTaskFollowers={setTaskFollowers}
 							setTaskProgressForm={setTaskProgressForm}
 							setTaskProgressOpen={setTaskProgressOpen}
 							resetTaskForm={resetTaskForm}
@@ -1802,6 +1936,7 @@ function App() {
 							openCreateTask={openCreateTask}
 							toggleAssignee={toggleAssignee}
 							toggleFollower={toggleFollower}
+							handleTaskUploadChange={handleTaskUploadChange}
 							submitTaskForm={submitTaskForm}
 							openProgressModal={openProgressModal}
 							submitTaskProgress={submitTaskProgress}
@@ -1816,6 +1951,9 @@ function App() {
 							closeTaskDetail={closeTaskDetail}
 							taskWorkflowSteps={taskWorkflowSteps}
 							taskWorkflowLoading={taskWorkflowLoading}
+							taskHistoryLogs={taskHistoryLogs}
+							taskHistoryLoading={taskHistoryLoading}
+							taskUploadFile={taskUploadFile}
 						/>
 					}
 				/>

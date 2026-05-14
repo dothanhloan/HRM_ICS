@@ -6,6 +6,8 @@ function ProjectsPage({
 	projectTotal,
 	projectQuery,
 	projectStatusFilter,
+	projectPriorityFilter,
+	projectLeadFilter,
 	projectStatus,
 	projectLoading,
 	projectPage,
@@ -13,6 +15,7 @@ function ProjectsPage({
 	projectTotalPages,
 	projectFormOpen,
 	projectEditingId,
+	projectFormReadOnly,
 	projectForm,
 	projectEmployees,
 	projectEmployeesLoading,
@@ -22,11 +25,14 @@ function ProjectsPage({
 	projectDeleteTarget,
 	setProjectQuery,
 	setProjectStatusFilter,
+	setProjectPriorityFilter,
+	setProjectLeadFilter,
 	setProjectPageSize,
 	setProjectFormOpen,
 	setProjectForm,
 	resetProjectForm,
 	fetchProjects,
+	fetchProjectEmployees,
 	openCreateProject,
 	openEditProject,
 	submitProjectForm,
@@ -43,11 +49,58 @@ function ProjectsPage({
 	];
 	const priorityOptions = ["Thấp", "Trung bình", "Cao"];
 
+	const leadOptions = useMemo(() => {
+		return projectEmployees.map((employee) => ({
+			id: String(employee.id),
+			name: employee.ho_ten || employee.email || `Nhân viên #${employee.id}`,
+		}));
+	}, [projectEmployees]);
+
+	const getInitials = (name) =>
+		String(name || "?")
+			.trim()
+			.split(/\s+/)
+			.slice(-2)
+			.map((part) => part.charAt(0).toUpperCase())
+			.join("");
+
+	const getPriorityClass = (priority) => {
+		const normalized = String(priority || "").toLowerCase();
+		if (normalized.includes("cao")) return "high";
+		if (normalized.includes("trung")) return "medium";
+		return "low";
+	};
+
+	const getProjectProgress = (row) => Number(row.tien_do ?? row.tien_do_du_an ?? 100);
+
+	const resetProjectFilters = () => {
+		setProjectQuery("");
+		setProjectStatusFilter("");
+		setProjectPriorityFilter("");
+		setProjectLeadFilter("");
+		fetchProjects(1, {
+			projectQuery: "",
+			projectStatusFilter: "",
+			projectPriorityFilter: "",
+			projectLeadFilter: "",
+		});
+	};
+
+	const closeProjectForm = () => {
+		setProjectFormOpen(false);
+		resetProjectForm();
+	};
+
+	const openProjectInfo = (row) => {
+		openEditProject(row, true);
+	};
+
 	useEffect(() => {
 		fetchProjects(1);
+		fetchProjectEmployees();
 	}, []);
 
-	const [projectView, setProjectView] = useState("card");
+	const [projectView, setProjectView] = useState("table");
 
 	const statusCounts = useMemo(() => {
 		const normalize = (value) =>
@@ -92,20 +145,25 @@ function ProjectsPage({
 			<div className="project-hero">
 				<div className="project-hero-content">
 					<h2>Quản lý dự án</h2>
-					<p>Theo dõi tiến độ và ưu tiên dự án theo thời gian thực</p>
+					<p>Theo dõi tiến độ dự án và điều phối nguồn lực</p>
 				</div>
 			</div>
 
 			<div className="admin-section-header">
-				<div>
+				<div className="task-header-title">
 					<h3>Danh sách dự án</h3>
 					<p>Tổng số: {projectTotal} dự án</p>
+					<span className="task-scope-pill">
+						{isAdmin
+							? "Admin xem tất cả dự án"
+							: "Nhân viên chỉ xem dự án mình phụ trách"}
+					</span>
 				</div>
-				<div className="header-actions">
-					<div className="admin-actions">
+				<div className="header-actions task-header-actions">
+					<div className="admin-actions task-filters">
 						<input
 							type="search"
-							placeholder="Tìm theo tên dự án hoặc leader"
+							placeholder="Tìm kiếm tên dự án..."
 							value={projectQuery}
 							onChange={(event) => setProjectQuery(event.target.value)}
 						/>
@@ -119,23 +177,41 @@ function ProjectsPage({
 							<option value="Đã hoàn thành">Đã hoàn thành</option>
 							<option value="Trễ hạn">Trễ hạn</option>
 						</select>
-						<button type="button" onClick={() => fetchProjects(1)}>
+						<select
+							value={projectPriorityFilter}
+							onChange={(event) => setProjectPriorityFilter(event.target.value)}
+						>
+							<option value="">Tất cả ưu tiên</option>
+							{priorityOptions.map((item) => (
+								<option key={item} value={item}>
+									{item}
+								</option>
+							))}
+						</select>
+						<select
+							value={projectLeadFilter}
+							onChange={(event) => setProjectLeadFilter(event.target.value)}
+						>
+							<option value="">Tất cả lead</option>
+							{leadOptions.map((lead) => (
+								<option key={lead.id} value={lead.id}>
+									{lead.name}
+								</option>
+							))}
+						</select>
+						<button type="button" className="task-filter-button" onClick={() => fetchProjects(1)}>
 							Tìm kiếm
 						</button>
+						<button type="button" className="task-filter-button" onClick={resetProjectFilters}>
+							Đặt lại
+						</button>
 						{isAdmin ? (
-							<button type="button" onClick={openCreateProject}>
-								Thêm mới dự án
+							<button type="button" className="task-create-button" onClick={openCreateProject}>
+								Tạo dự án
 							</button>
 						) : null}
 					</div>
-					<div className="view-tabs">
-						<button
-							type="button"
-							className={projectView === "card" ? "active" : ""}
-							onClick={() => setProjectView("card")}
-						>
-							Card
-						</button>
+					<div className="view-tabs task-view-tabs">
 						<button
 							type="button"
 							className={projectView === "table" ? "active" : ""}
@@ -143,26 +219,33 @@ function ProjectsPage({
 						>
 							Table
 						</button>
+						<button
+							type="button"
+							className={projectView === "card" ? "active" : ""}
+							onClick={() => setProjectView("card")}
+						>
+							Card
+						</button>
 					</div>
 				</div>
 			</div>
-			<div className="project-summary">
-				<div className="project-stat-card total">
+			<div className="project-summary task-summary">
+				<div className="project-stat-card task-stat-card total">
 					<span>Tổng dự án</span>
 					<strong>{projectTotal}</strong>
 					<small>Đang hiển thị {projectRows.length} dự án</small>
 				</div>
-				<div className="project-stat-card active">
+				<div className="project-stat-card task-stat-card active">
 					<span>Đang thực hiện</span>
 					<strong>{statusCounts.inProgress}</strong>
 					<small>Ưu tiên theo dõi</small>
 				</div>
-				<div className="project-stat-card done">
+				<div className="project-stat-card task-stat-card done">
 					<span>Đã hoàn thành</span>
 					<strong>{statusCounts.completed}</strong>
 					<small>Đã nghiệm thu</small>
 				</div>
-				<div className="project-stat-card late">
+				<div className="project-stat-card task-stat-card late">
 					<span>Trễ hạn</span>
 					<strong>{statusCounts.overdue}</strong>
 					<small>Cần xử lý</small>
@@ -171,24 +254,23 @@ function ProjectsPage({
 
 			{projectFormOpen ? (
 				<div className="modal-backdrop">
-					<div className="modal">
+					<div className={`modal ${projectFormReadOnly ? "project-info-modal" : ""}`}>
 						<div className="modal-header">
-							<h3>{projectEditingId ? "Cập nhật dự án" : "Tạo dự án"}</h3>
+							<h3>{projectFormReadOnly ? "Thông tin dự án" : projectEditingId ? "Cập nhật dự án" : "Tạo dự án"}</h3>
 							<button
 								type="button"
-								className="ghost"
-								onClick={() => {
-									setProjectFormOpen(false);
-									resetProjectForm();
-								}}
+								className="modal-icon-close"
+								onClick={closeProjectForm}
+								aria-label="Đóng"
 							>
-								Đóng
+								×
 							</button>
 						</div>
 						<div className="form-grid">
 							<div className="form-group">
 								<label>Tên dự án *</label>
 								<input
+									readOnly={projectFormReadOnly}
 									value={projectForm.ten_du_an}
 									onChange={(event) =>
 										setProjectForm({
@@ -201,6 +283,7 @@ function ProjectsPage({
 							<div className="form-group">
 								<label>Nhóm dự án</label>
 								<select
+									disabled={projectFormReadOnly}
 									value={projectForm.nhom_du_an}
 									onChange={(event) =>
 										setProjectForm({
@@ -220,6 +303,7 @@ function ProjectsPage({
 							<div className="form-group">
 								<label>Phòng ban</label>
 								<select
+									disabled={projectFormReadOnly}
 									value={projectForm.phong_ban}
 									onChange={(event) =>
 										setProjectForm({
@@ -239,6 +323,7 @@ function ProjectsPage({
 							<div className="form-group">
 								<label>Mức độ ưu tiên</label>
 								<select
+									disabled={projectFormReadOnly}
 									value={projectForm.muc_do_uu_tien}
 									onChange={(event) =>
 										setProjectForm({
@@ -258,6 +343,7 @@ function ProjectsPage({
 							<div className="form-group">
 								<label>Ngày bắt đầu *</label>
 								<input
+									readOnly={projectFormReadOnly}
 									type="date"
 									value={projectForm.ngay_bat_dau}
 									onChange={(event) =>
@@ -271,6 +357,7 @@ function ProjectsPage({
 							<div className="form-group">
 								<label>Ngày kết thúc *</label>
 								<input
+									readOnly={projectFormReadOnly}
 									type="date"
 									value={projectForm.ngay_ket_thuc}
 									onChange={(event) =>
@@ -284,6 +371,7 @@ function ProjectsPage({
 							<div className="form-group">
 								<label>Trưởng dự án *</label>
 								<select
+									disabled={projectFormReadOnly}
 									value={projectForm.lead_id}
 									onChange={(event) =>
 										setProjectForm({
@@ -304,6 +392,7 @@ function ProjectsPage({
 							<div className="form-group">
 								<label>Mô tả *</label>
 								<textarea
+									readOnly={projectFormReadOnly}
 									rows="3"
 									value={projectForm.mo_ta}
 									onChange={(event) =>
@@ -324,16 +413,15 @@ function ProjectsPage({
 							</div>
 						) : null}
 						<div className="form-actions">
-							<button type="button" onClick={submitProjectForm}>
-								{projectEditingId ? "Lưu cập nhật" : "Lưu dự án"}
-							</button>
+							{projectFormReadOnly ? null : (
+								<button type="button" onClick={submitProjectForm}>
+									{projectEditingId ? "Lưu cập nhật" : "Lưu dự án"}
+								</button>
+							)}
 							<button
 								type="button"
 								className="ghost"
-								onClick={() => {
-									setProjectFormOpen(false);
-									resetProjectForm();
-								}}
+								onClick={closeProjectForm}
 							>
 								Hủy
 							</button>
@@ -353,58 +441,96 @@ function ProjectsPage({
 					) : projectRows.length === 0 ? (
 						<div className="project-empty">Không có dữ liệu</div>
 					) : (
-						projectRows.map((row) => (
-							<div className="project-card" key={row.id}>
-								<div className="project-card-header">
-									<span className="data-emphasis">#{row.id}</span>
-									<span
-										className={`status-pill ${
-											statusClassMap[row.trang_thai_duan] || "status-muted"
-										}`}
-									>
-										{row.trang_thai_duan || "-"}
-									</span>
-								</div>
-								<h4>{row.ten_du_an}</h4>
-								<p className="project-card-meta">{row.nhom_du_an || "Chưa phân nhóm"}</p>
-								<div className="project-card-row">
-									<span>Trưởng dự án</span>
-									<strong>{row.lead_name || "-"}</strong>
-								</div>
-								<div className="project-card-row">
-									<span>Số thành viên</span>
-									<strong>{row.so_thanh_vien ?? 0}</strong>
-								</div>
-								<div className="project-card-dates">
-									<div>
-										<small>Ngày bắt đầu</small>
-										<span className="data-emphasis">{row.ngay_bat_dau || "-"}</span>
+						projectRows.map((row) => {
+							const progress = getProjectProgress(row);
+							return (
+								<div
+									className="project-card project-card-clickable"
+									key={row.id}
+									role="button"
+									tabIndex={0}
+									onClick={() => openProjectInfo(row)}
+									onKeyDown={(event) => {
+										if (event.key === "Enter" || event.key === " ") {
+											event.preventDefault();
+											openProjectInfo(row);
+										}
+									}}
+								>
+									<div className="project-card-topline" />
+									<div className="project-card-title-row">
+										<h4>{row.ten_du_an}</h4>
+										<span className={`project-priority ${getPriorityClass(row.muc_do_uu_tien)}`}>
+											{row.muc_do_uu_tien || "Thấp"}
+										</span>
 									</div>
-									<div>
-										<small>Ngày kết thúc</small>
-										<span className="data-emphasis">{row.ngay_ket_thuc || "-"}</span>
+									<p className="project-card-desc">{row.mo_ta || row.nhom_du_an || "Chưa có mô tả"}</p>
+									<div className="project-lead-box">
+										<div className="project-lead-avatar">{getInitials(row.lead_name)}</div>
+										<div>
+											<span>Lead dự án</span>
+											<strong>{row.lead_name || "-"}</strong>
+										</div>
 									</div>
-								</div>
-								{isAdmin ? (
-									<div className="row-actions">
-										<button type="button" onClick={() => openEditProject(row)}>
-											Sửa
-										</button>
+									<div className="project-card-info-grid">
+										<div>
+											<span className="project-info-icon">◆</span>
+											<span>{row.nhom_du_an || "Khác"}</span>
+										</div>
+										<div>
+											<span className="project-info-icon">▣</span>
+											<span>{row.phong_ban || "Chưa phân"}</span>
+										</div>
+										<div>
+											<span className="project-info-icon">▣</span>
+											<strong>{row.ngay_bat_dau || "-"}</strong>
+										</div>
+										<div>
+											<span className="project-info-icon">▣</span>
+											<strong>{row.ngay_ket_thuc || "-"}</strong>
+										</div>
+									</div>
+									<div className="project-progress">
+										<div>
+											<span>Tiến độ</span>
+											<strong>{progress}%</strong>
+										</div>
+										<div className="project-progress-track">
+											<span style={{ width: `${Math.min(Math.max(progress, 0), 100)}%` }} />
+										</div>
+									</div>
+									<div className="project-status-bar">{row.trang_thai_duan || "Đang thực hiện"}</div>
+									<div className="project-card-actions">
 										<button
 											type="button"
-											className="ghost"
-											onClick={() => requestDeleteProject(row)}
+											className="project-view-button"
+											onClick={(event) => {
+												event.stopPropagation();
+												openProjectInfo(row);
+											}}
 										>
-											Xóa
+											Xem
 										</button>
+										{isAdmin ? (
+											<button
+												type="button"
+												className="project-edit-button"
+												onClick={(event) => {
+													event.stopPropagation();
+													openEditProject(row);
+												}}
+											>
+												Sửa
+											</button>
+										) : null}
 									</div>
-								) : null}
-							</div>
-						))
+								</div>
+							);
+						})
 					)}
 				</div>
 			) : (
-				<div className="admin-table project-table">
+				<div className="admin-table project-table task-table">
 					<table>
 						<thead>
 							<tr>
@@ -416,17 +542,28 @@ function ProjectsPage({
 								<th>Trạng thái</th>
 								<th>Ngày bắt đầu</th>
 								<th>Ngày kết thúc</th>
-								{isAdmin ? <th>Thao tác</th> : null}
+								<th>Thao tác</th>
 							</tr>
 						</thead>
 						<tbody>
 							{projectLoading ? (
 								<tr>
-									<td colSpan={isAdmin ? 9 : 8}>Đang tải dữ liệu...</td>
+									<td colSpan="9">Đang tải dữ liệu...</td>
 								</tr>
 							) : (
 								projectRows.map((row) => (
-									<tr key={row.id}>
+									<tr
+										key={row.id}
+										className="project-row-clickable"
+										tabIndex={0}
+										onClick={() => openProjectInfo(row)}
+										onKeyDown={(event) => {
+											if (event.key === "Enter" || event.key === " ") {
+												event.preventDefault();
+												openProjectInfo(row);
+											}
+										}}
+									>
 										<td>
 											<span className="data-emphasis">{row.id}</span>
 										</td>
@@ -457,28 +594,33 @@ function ProjectsPage({
 										<td>
 											<span className="data-emphasis">{row.ngay_ket_thuc || "-"}</span>
 										</td>
-										{isAdmin ? (
-											<td>
-												<div className="row-actions">
-													<button type="button" onClick={() => openEditProject(row)}>
-														Sửa
-													</button>
-													<button
-														type="button"
-														className="ghost"
-														onClick={() => requestDeleteProject(row)}
-													>
-														Xóa
-													</button>
-												</div>
-											</td>
-										) : null}
+										<td onClick={(event) => event.stopPropagation()}>
+											<div className="row-actions">
+												<button type="button" onClick={() => openProjectInfo(row)}>
+													Xem
+												</button>
+												{isAdmin ? (
+													<>
+														<button type="button" onClick={() => openEditProject(row)}>
+															Sửa
+														</button>
+														<button
+															type="button"
+															className="ghost"
+															onClick={() => requestDeleteProject(row)}
+														>
+															Xóa
+														</button>
+													</>
+												) : null}
+											</div>
+										</td>
 									</tr>
 								))
 							)}
 							{!projectLoading && projectRows.length === 0 ? (
 								<tr>
-									<td colSpan={isAdmin ? 9 : 8}>Không có dữ liệu</td>
+									<td colSpan="9">Không có dữ liệu</td>
 								</tr>
 							) : null}
 						</tbody>

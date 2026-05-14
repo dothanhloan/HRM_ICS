@@ -31,6 +31,7 @@ function TasksPage({
 	setTaskFormOpen,
 	setTaskForm,
 	setTaskAssignees,
+	setTaskFollowers,
 	setTaskProgressForm,
 	setTaskProgressOpen,
 	resetTaskForm,
@@ -39,6 +40,7 @@ function TasksPage({
 	openCreateTask,
 	toggleAssignee,
 	toggleFollower,
+	handleTaskUploadChange,
 	submitTaskForm,
 	openProgressModal,
 	submitTaskProgress,
@@ -53,6 +55,9 @@ function TasksPage({
 	closeTaskDetail,
 	taskWorkflowSteps,
 	taskWorkflowLoading,
+	taskHistoryLogs,
+	taskHistoryLoading,
+	taskUploadFile,
 }) {
 	useEffect(() => {
 		fetchTasks(1);
@@ -201,6 +206,20 @@ function TasksPage({
 		return Math.min(100, Math.round((completed / taskWorkflowSteps.length) * 100));
 	}, [taskWorkflowSteps]);
 
+	const formatHistoryTime = (value) => {
+		if (!value) {
+			return "-";
+		}
+		const dateValue = new Date(value);
+		if (Number.isNaN(dateValue.getTime())) {
+			return String(value);
+		}
+		return new Intl.DateTimeFormat("vi-VN", {
+			dateStyle: "short",
+			timeStyle: "short",
+		}).format(dateValue);
+	};
+
 	const selectedProject = useMemo(() => {
 		const selectedId = taskForm.du_an_id ? String(taskForm.du_an_id) : "";
 		if (!selectedId) {
@@ -218,6 +237,7 @@ function TasksPage({
 	}, [selectedProject, user?.id]);
 
 	const canAssignOthers = isAdmin || isProjectLead;
+	const canSaveTask = !taskProjectsLoading && !taskEmployeesLoading;
 
 	useEffect(() => {
 		if (isAdmin) {
@@ -360,12 +380,18 @@ function TasksPage({
 								<label>Dự án</label>
 								<select
 									value={taskForm.du_an_id}
-									onChange={(event) =>
+									onChange={(event) => {
+										const nextProject = taskProjects.find(
+											(project) => String(project.id) === String(event.target.value)
+										);
 										setTaskForm({
 											...taskForm,
 											du_an_id: event.target.value,
-										})
-									}
+										});
+										if (!isAdmin && nextProject?.lead_id && String(nextProject.lead_id) === String(user?.id)) {
+											fetchTaskEmployees(true);
+										}
+									}}
 								>
 									<option value="">Chọn dự án</option>
 									{taskProjects.map((project) => (
@@ -379,6 +405,7 @@ function TasksPage({
 									<label>Người giao</label>
 									<select
 										value={taskForm.nguoi_giao_id}
+										disabled={!isAdmin}
 										onChange={(event) =>
 											setTaskForm({
 												...taskForm,
@@ -437,23 +464,6 @@ function TasksPage({
 								</select>
 							</div>
 							<div className="form-group">
-								<label>Trạng thái</label>
-								<select
-									value={taskForm.trang_thai}
-									onChange={(event) =>
-										setTaskForm({
-											...taskForm,
-											trang_thai: event.target.value,
-										})
-									}
-								>
-									<option value="Chưa bắt đầu">Chưa bắt đầu</option>
-									<option value="Đang thực hiện">Đang thực hiện</option>
-									<option value="Đã hoàn thành">Đã hoàn thành</option>
-									<option value="Trễ hạn">Trễ hạn</option>
-								</select>
-							</div>
-							<div className="form-group">
 								<label>Link tài liệu</label>
 								<input
 									value={taskForm.tai_lieu_cv}
@@ -464,6 +474,13 @@ function TasksPage({
 										})
 									}
 								/>
+							</div>
+							<div className="form-group">
+								<label>File dinh kem</label>
+								<input type="file" onChange={handleTaskUploadChange} />
+								{taskUploadFile ? (
+									<p className="helper-text">Da chon: {taskUploadFile.name}</p>
+								) : null}
 							</div>
 							<div className="form-group">
 								<label>Mô tả *</label>
@@ -482,18 +499,19 @@ function TasksPage({
 						<div className="task-member-block">
 							<label>Người nhận *</label>
 							{canAssignOthers ? (
-								<div className="task-member-list">
+								<select
+									value={taskAssignees[0] || ""}
+									onChange={(event) =>
+										setTaskAssignees(event.target.value ? [Number(event.target.value)] : [])
+									}
+								>
+									<option value="">Chọn 1 nhân viên</option>
 									{taskEmployees.map((employee) => (
-										<label key={employee.id} className="task-member-item">
-											<input
-												type="checkbox"
-												checked={taskAssignees.includes(employee.id)}
-												onChange={() => toggleAssignee(employee.id)}
-											/>
-											<span>{employee.ho_ten}</span>
-										</label>
+										<option key={employee.id} value={employee.id}>
+											{employee.ho_ten}
+										</option>
 									))}
-								</div>
+								</select>
 							) : (
 								<div className="task-member-list">
 									<p className="task-member-note">
@@ -504,24 +522,21 @@ function TasksPage({
 						</div>
 						<div className="task-member-block">
 							<label>Người theo dõi</label>
-							<div className="task-member-list">
+							<select
+								value={taskFollowers[0] || ""}
+								onChange={(event) =>
+									setTaskFollowers(event.target.value ? [Number(event.target.value)] : [])
+								}
+							>
+								<option value="">Chọn 1 nhân viên</option>
 								{taskEmployees.map((employee) => (
-									<label key={employee.id} className="task-member-item">
-										<input
-											type="checkbox"
-											checked={taskFollowers.includes(employee.id)}
-											onChange={() => toggleFollower(employee.id)}
-										/>
-										<span>{employee.ho_ten}</span>
-									</label>
+									<option key={employee.id} value={employee.id}>
+										{employee.ho_ten}
+									</option>
 								))}
-							</div>
+							</select>
 						</div>
-							<div className="task-subtask-action">
-								<button type="button" className="ghost task-subtask-button">
-									+ Thêm việc con
-								</button>
-							</div>
+							
 						{taskProjectsLoading || taskEmployeesLoading ? (
 							<p>Đang tải danh sách liên quan...</p>
 						) : null}
@@ -531,7 +546,7 @@ function TasksPage({
 							</div>
 						) : null}
 						<div className="form-actions">
-							<button type="button" onClick={submitTaskForm}>
+							<button type="button" onClick={submitTaskForm} disabled={!canSaveTask}>
 								{taskEditingId ? "Lưu cập nhật" : "Lưu công việc"}
 							</button>
 							<button
@@ -737,53 +752,88 @@ function TasksPage({
 										<label>Tên công việc</label>
 										<input 
 											type="text" 
-											value={taskDetailTarget.ten_cong_viec || ""} 
-											disabled 
+											value={taskForm.ten_cong_viec} 
+											onChange={(event) =>
+												setTaskForm({
+													...taskForm,
+													ten_cong_viec: event.target.value,
+												})
+											} 
 										/>
 									</div>
 									<div className="form-group">
 										<label>Mức độ ưu tiên</label>
-										<select disabled>
-											<option>{taskDetailTarget.muc_do_uu_tien || "Trung bình"}</option>
+										<select
+											value={taskForm.muc_do_uu_tien}
+											onChange={(event) =>
+												setTaskForm({
+													...taskForm,
+													muc_do_uu_tien: event.target.value,
+												})
+											}
+										>
+											<option value="Thấp">Thấp</option>
+											<option value="Trung bình">Trung bình</option>
+											<option value="Cao">Cao</option>
 										</select>
 									</div>
 									<div className="form-group full">
 										<label>Mô tả</label>
 										<textarea 
 											rows="4" 
-											value={taskDetailTarget.mo_ta || ""} 
-											disabled 
+											value={taskForm.mo_ta} 
+											onChange={(event) =>
+												setTaskForm({
+													...taskForm,
+													mo_ta: event.target.value,
+												})
+											} 
 										/>
 									</div>
 									<div className="form-group">
 										<label>Ngày bắt đầu</label>
 										<input 
 											type="date" 
-											value={taskDetailTarget.ngay_bat_dau || ""} 
-											disabled 
+											value={taskForm.ngay_bat_dau} 
+											onChange={(event) =>
+												setTaskForm({
+													...taskForm,
+													ngay_bat_dau: event.target.value,
+												})
+											} 
 										/>
 									</div>
 									<div className="form-group">
 										<label>Hạn hoàn thành</label>
 										<input 
 											type="date" 
-											value={taskDetailTarget.han_hoan_thanh || ""} 
-											disabled 
+											value={taskForm.han_hoan_thanh} 
+											onChange={(event) =>
+												setTaskForm({
+													...taskForm,
+													han_hoan_thanh: event.target.value,
+												})
+											} 
 										/>
-									</div>
-									<div className="form-group">
-										<label>Trạng thái</label>
-										<select disabled>
-											<option>{taskDetailTarget.trang_thai || "-"}</option>
-										</select>
 									</div>
 									<div className="form-group">
 										<label>Người giao</label>
-										<input 
-											type="text" 
-											value={taskDetailTarget.nguoi_giao || ""} 
-											disabled 
-										/>
+										<select
+											value={taskForm.nguoi_giao_id}
+											onChange={(event) =>
+												setTaskForm({
+													...taskForm,
+													nguoi_giao_id: event.target.value,
+												})
+											}
+										>
+											<option value="">Chọn người giao</option>
+											{taskEmployees.map((employee) => (
+												<option key={employee.id} value={employee.id}>
+													{employee.ho_ten}
+												</option>
+											))}
+										</select>
 									</div>
 									<div className="form-group">
 										<label>Phòng ban</label>
@@ -820,15 +870,27 @@ function TasksPage({
 										<input 
 											type="text" 
 											placeholder="Chưa có link tài liệu" 
-											value={taskDetailTarget.tai_lieu_cv || ""} 
-											disabled 
+											value={taskForm.tai_lieu_cv} 
+											onChange={(event) =>
+												setTaskForm({
+													...taskForm,
+													tai_lieu_cv: event.target.value,
+												})
+											} 
 										/>
 									</div>
 									<div className="form-group full">
 										<label>File công việc</label>
+										<input
+											type="file"
+											accept="*/*"
+											onChange={handleTaskUploadChange}
+										/>
 										<div className="file-upload-area">
-											<span>Choose Files</span>
-											<span>No file chosen</span>
+											<span>File hiện tại</span>
+											<span>
+												{taskUploadFile?.name || taskForm.tai_lieu_cv?.split("/").pop() || "Chưa có file"}
+											</span>
 										</div>
 									</div>
 								</div>
@@ -890,28 +952,43 @@ function TasksPage({
 								<div className="section-icon">⏱️</div>
 								<h4>Lịch sử công việc</h4>
 								<div className="history-timeline">
-									<div className="history-item">
-										<div className="history-dot">1</div>
-										<div className="history-content">
-											<p className="history-text">Chưa có lịch sử thay đổi</p>
-											<small className="history-time">-</small>
+									{taskHistoryLoading ? (
+										<div className="history-item">
+											<div className="history-dot">...</div>
+											<div className="history-content">
+												<p className="history-text">Đang tải lịch sử...</p>
+												<small className="history-time">-</small>
+											</div>
 										</div>
-									</div>
+									) : taskHistoryLogs && taskHistoryLogs.length > 0 ? (
+										taskHistoryLogs.map((historyItem, index) => (
+											<div key={historyItem.id || `${historyItem.cong_viec_id}-${index}`} className="history-item">
+												<div className="history-dot">{taskHistoryLogs.length - index}</div>
+												<div className="history-content">
+													<p className="history-text">{historyItem.mo_ta_thay_doi || "Không có mô tả thay đổi"}</p>
+													<small className="history-time">
+														{historyItem.nguoi_thay_doi ? `${historyItem.nguoi_thay_doi} • ` : ""}
+														{formatHistoryTime(historyItem.thoi_gian)}
+													</small>
+												</div>
+											</div>
+										))
+									) : (
+										<div className="history-item">
+											<div className="history-dot">1</div>
+											<div className="history-content">
+												<p className="history-text">Chưa có lịch sử thay đổi</p>
+												<small className="history-time">-</small>
+											</div>
+										</div>
+									)}
 								</div>
 							</div>
 
 							{/* Nút cập nhật tiến độ */}
-							{!isAdmin && (
 								<div className="detail-actions">
-									<button 
-										type="button" 
-										onClick={() => {
-											closeTaskDetail();
-											openProgressModal(taskDetailTarget);
-										}}
-										className="btn-primary"
-									>
-										Cập nhật tiến độ
+									<button type="button" onClick={() => submitTaskForm(true)} className="btn-primary">
+										Lưu thay đổi
 									</button>
 									<button 
 										type="button" 
@@ -921,7 +998,6 @@ function TasksPage({
 										Đóng
 									</button>
 								</div>
-							)}
 						</div>
 					</div>
 				</div>

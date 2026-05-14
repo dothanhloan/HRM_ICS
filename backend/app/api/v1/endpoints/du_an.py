@@ -40,6 +40,8 @@ class DuAnUpdate(BaseModel):
 def list_du_an(
 	q: Optional[str] = None,
 	trang_thai: Optional[str] = None,
+	muc_do_uu_tien: Optional[str] = None,
+	lead_id: Optional[int] = None,
 	actor: str = "admin",
 	nhan_vien_id: Optional[int] = None,
 	page: int = 1,
@@ -68,6 +70,12 @@ def list_du_an(
 		}
 		conditions.append("d.trang_thai_duan = :trang_thai")
 		params["trang_thai"] = status_map.get(normalized, trang_thai)
+	if muc_do_uu_tien:
+		conditions.append("d.muc_do_uu_tien = :muc_do_uu_tien")
+		params["muc_do_uu_tien"] = muc_do_uu_tien
+	if lead_id:
+		conditions.append("d.lead_id = :lead_id")
+		params["lead_id"] = lead_id
 
 	actor_value = (actor or "").lower()
 	if actor_value == "employee":
@@ -83,10 +91,14 @@ def list_du_an(
 		SELECT
 			d.id,
 			d.ten_du_an,
+			d.mo_ta,
 			d.nhom_du_an,
+			d.phong_ban,
+			d.muc_do_uu_tien,
 			d.trang_thai_duan,
 			d.ngay_bat_dau,
 			d.ngay_ket_thuc,
+			d.lead_id,
 			nv.ho_ten AS lead_name,
 			CASE WHEN d.lead_id IS NULL THEN 0 ELSE 1 END AS so_thanh_vien
 		FROM du_an d
