@@ -45,7 +45,7 @@ function AttendancePage({
 			fetchAttendanceToday(user.id);
 		}
 		fetchAttendanceHistory(user.id, 1, 7, undefined, undefined, isAdmin);
-	}, [user?.id]);
+	}, [user?.id, isAdmin]);
 
 	const historyRows = attendanceHistory || [];
 
@@ -370,6 +370,27 @@ function AttendancePage({
 		return "status-muted";
 	};
 
+	const getInitials = (name) =>
+		String(name || "NV")
+			.trim()
+			.split(/\s+/)
+			.slice(-2)
+			.map((part) => part.charAt(0).toUpperCase())
+			.join("") || "NV";
+
+	const renderAvatar = (item) => {
+		if (item.avatar_url) {
+			return (
+				<img
+					className="attendance-avatar"
+					src={item.avatar_url}
+					alt={item.ho_ten || "Nhan vien"}
+				/>
+			);
+		}
+		return <span className="attendance-avatar placeholder">{getInitials(item.ho_ten)}</span>;
+	};
+
 	return (
 		<section className="attendance-page">
 			{!isAdmin ? (
@@ -396,10 +417,10 @@ function AttendancePage({
 			<div className="attendance-card">
 				<div className="attendance-card-header">
 					<div>
-						<h2>Chấm công tháng {month}/{year}</h2>
+						<h2>{isAdmin ? "Quản lý chấm công" : `Chấm công tháng ${month}/${year}`}</h2>
 						<p>Quản lý lịch sử check-in/check-out và trạng thái làm việc.</p>
 					</div>
-					<div className="attendance-status">
+					{!isAdmin ? <div className="attendance-status">
 						<span className="status-label">Trạng thái hôm nay:</span>
 						{attendanceToday?.check_in ? (
 							<span className="status-pill status-success">
@@ -415,7 +436,7 @@ function AttendancePage({
 						) : (
 							<span className="status-pill status-muted">Chưa check-out</span>
 						)}
-					</div>
+					</div> : null}
 				</div>
 
 				<div className="attendance-actions">
@@ -476,38 +497,52 @@ function AttendancePage({
 					<table aria-label="Bang cham cong">
 						<thead>
 							<tr>
-								{isAdmin ? <th scope="col">Nhân viên</th> : null}
+								{isAdmin ? (
+									<>
+										<th scope="col">#</th>
+										<th scope="col">Avatar</th>
+										<th scope="col">Họ tên</th>
+										<th scope="col">Phòng ban</th>
+										<th scope="col">Ngày vào</th>
+									</>
+								) : null}
 								<th scope="col">Ngày</th>
 								<th scope="col">Check-in</th>
 								<th scope="col">Check-out</th>
 								<th scope="col">Số giờ</th>
 								<th scope="col">Trạng thái</th>
-								<th scope="col">Báo cáo</th>
+								<th scope="col">{isAdmin ? "Hành động" : "Báo cáo"}</th>
 							</tr>
 						</thead>
 						<tbody>
 							{attendanceLoading ? (
 								<tr>
-									<td className="attendance-empty-state" colSpan={isAdmin ? 7 : 6}>
+									<td className="attendance-empty-state" colSpan={isAdmin ? 11 : 6}>
 										Đang tải dữ liệu...
 									</td>
 								</tr>
 							) : historyRows.length === 0 ? (
 								<tr>
-									<td className="attendance-empty-state" colSpan={isAdmin ? 7 : 6}>
+									<td className="attendance-empty-state" colSpan={isAdmin ? 11 : 6}>
 										Chưa có dữ liệu chấm công.
 									</td>
 								</tr>
 							) : (
-								historyRows.map((item) => {
+								historyRows.map((item, index) => {
 									const attendanceStatusValue =
 										item.trang_thai_hien_tai || item.trang_thai || "-";
 									return (
 									<tr key={item.id}>
 										{isAdmin ? (
-											<td className="attendance-employee-cell">
-												<strong>{item.ho_ten || item.nhan_vien_id}</strong>
-											</td>
+											<>
+												<td>{index + 1}</td>
+												<td>{renderAvatar(item)}</td>
+												<td className="attendance-employee-cell">
+													<strong>{item.ho_ten || item.nhan_vien_id}</strong>
+												</td>
+												<td>{item.phong_ban || "-"}</td>
+												<td className="attendance-date-cell">{item.ngay_vao_lam || "-"}</td>
+											</>
 										) : null}
 										<td className="attendance-date-cell">{item.ngay || "-"}</td>
 										<td className="attendance-time-cell">{formatTime(item.check_in)}</td>

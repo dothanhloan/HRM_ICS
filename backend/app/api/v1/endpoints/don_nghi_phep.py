@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.api.deps import get_db
 from app.api.v1.endpoints.crud_factory import create_crud_router
-from app.models.generated import DonNghiPhep, NgayPhepNam, Nhanvien
+from app.models.generated import DonNghiPhep, NgayPhepNam, Nhanvien, PhongBan
 
 router = APIRouter(prefix="/don_nghi_phep", tags=["don_nghi_phep"])
 crud_router = create_crud_router(DonNghiPhep, prefix="", tags=["don_nghi_phep"])
@@ -124,13 +124,18 @@ def list_leave_requests(
 
 	nv = aliased(Nhanvien)
 	nd = aliased(Nhanvien)
+	pb = aliased(PhongBan)
 	query = (
 		db.query(
 			DonNghiPhep,
 			nv.ho_ten.label("nhan_vien_ten"),
+			nv.email.label("nhan_vien_email"),
+			nv.avatar_url.label("nhan_vien_avatar"),
+			pb.ten_phong.label("phong_ban"),
 			nd.ho_ten.label("nguoi_duyet_ten"),
 		)
 		.outerjoin(nv, nv.id == DonNghiPhep.nhan_vien_id)
+		.outerjoin(pb, pb.id == nv.phong_ban_id)
 		.outerjoin(nd, nd.id == DonNghiPhep.nguoi_duyet_id)
 	)
 
@@ -150,9 +155,12 @@ def list_leave_requests(
 		.all()
 	)
 	data = []
-	for item, nhan_vien_ten, nguoi_duyet_ten in rows:
+	for item, nhan_vien_ten, nhan_vien_email, nhan_vien_avatar, phong_ban, nguoi_duyet_ten in rows:
 		row = _to_dict(item)
 		row["nhan_vien_ten"] = nhan_vien_ten
+		row["nhan_vien_email"] = nhan_vien_email
+		row["nhan_vien_avatar"] = nhan_vien_avatar
+		row["phong_ban"] = phong_ban
 		row["nguoi_duyet_ten"] = nguoi_duyet_ten
 		data.append(row)
 
@@ -164,6 +172,73 @@ def list_leave_requests(
 		"page": page,
 		"page_size": resolved_limit,
 		"total_pages": total_pages,
+	}
+
+
+@router.get("/thong_ke_ngay_phep")
+def leave_day_stats(
+	nam: int,
+	actor_id: int,
+	db: Session = Depends(get_db),
+) -> dict:
+	if not _is_admin(actor_id, db):
+		raise HTTPException(status_code=403, detail="Forbidden")
+
+	rows = db.execute(
+		text(
+			"""
+			SELECT
+			  nv.id,
+			  nv.ho_ten,
+			  nv.email,
+			  nv.avatar_url,
+			  nv.ngay_vao_lam,
+			  pb.ten_phong AS phong_ban,
+			  COALESCE(npn.tong_ngay_phep, 12.0) AS tong_ngay_phep,
+			  COALESCE(npn.ngay_phep_da_dung, 0.0) AS ngay_phep_da_dung,
+			  COALESCE(npn.ngay_phep_con_lai, 12.0) AS ngay_phep_con_lai,
+			  COALESCE(npn.ngay_phep_nam_truoc, 0.0) AS ngay_phep_nam_truoc
+			FROM nhanvien nv
+			LEFT JOIN phong_ban pb ON pb.id = nv.phong_ban_id
+			LEFT JOIN ngay_phep_nam npn ON npn.nhan_vien_id = nv.id AND npn.nam = :nam
+			ORDER BY nv.ho_ten ASC
+			"""
+		),
+		{"nam": nam},
+	).mappings().all()
+
+	data = []
+	for row in rows:
+		tong = float(row.get("tong_ngay_phep") or 0)
+		da_dung = float(row.get("ngay_phep_da_dung") or 0)
+		con_lai = float(row.get("ngay_phep_con_lai") or 0)
+		nam_truoc = float(row.get("ngay_phep_nam_truoc") or 0)
+		data.append(
+			{
+				"id": row.get("id"),
+				"ho_ten": row.get("ho_ten"),
+				"email": row.get("email"),
+				"avatar_url": row.get("avatar_url"),
+				"ngay_vao_lam": row.get("ngay_vao_lam"),
+				"phong_ban": row.get("phong_ban"),
+				"tong_ngay_phep": tong,
+				"ngay_phep_da_dung": da_dung,
+				"ngay_phep_con_lai": con_lai,
+				"ngay_phep_nam_truoc": nam_truoc,
+				"ngay_phep_trong_nam": max(tong - nam_truoc, 0),
+			}
+		)
+
+	return {
+		"data": data,
+		"summary": {
+			"tong_ngay_phep": sum(item["tong_ngay_phep"] for item in data),
+			"ngay_phep_da_dung": sum(item["ngay_phep_da_dung"] for item in data),
+			"ngay_phep_con_lai": sum(item["ngay_phep_con_lai"] for item in data),
+			"ngay_phep_nam_truoc": sum(item["ngay_phep_nam_truoc"] for item in data),
+			"nhan_vien": len(data),
+		},
+		"nam": nam,
 	}
 
 

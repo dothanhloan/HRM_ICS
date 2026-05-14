@@ -31,6 +31,9 @@ function EmployeesPage({
 	setDeleteTarget,
 }) {
 	const [viewEmployee, setViewEmployee] = useState(null);
+	const [departmentFilter, setDepartmentFilter] = useState("");
+	const [statusFilter, setStatusFilter] = useState("");
+	const [roleFilter, setRoleFilter] = useState("");
 
 	const departmentMap = useMemo(() => {
 		return employeeDepartments.reduce((acc, department) => {
@@ -82,6 +85,33 @@ function EmployeesPage({
 		return initials.toUpperCase();
 	};
 
+	const filteredEmployeeRows = useMemo(() => {
+		return employeeRows.filter((row) => {
+			const matchesDepartment =
+				!departmentFilter || String(row.phong_ban_id || "") === departmentFilter;
+			const matchesStatus = !statusFilter || row.trang_thai_lam_viec === statusFilter;
+			const matchesRole = !roleFilter || row.vai_tro === roleFilter;
+			return matchesDepartment && matchesStatus && matchesRole;
+		});
+	}, [departmentFilter, employeeRows, roleFilter, statusFilter]);
+
+	const renderAvatar = (row) => {
+		if (row.avatar_url) {
+			return (
+				<img
+					src={row.avatar_url}
+					alt={row.ho_ten || "Nhan vien"}
+					className="employee-table-avatar"
+				/>
+			);
+		}
+		return (
+			<span className="employee-table-avatar placeholder">
+				{getInitials(row.ho_ten)}
+			</span>
+		);
+	};
+
 	const openViewEmployee = (row) => {
 		setEmployeeEditingId(row.id);
 		setEmployeeForm({
@@ -128,6 +158,35 @@ function EmployeesPage({
 						value={employeeQuery}
 						onChange={(event) => setEmployeeQuery(event.target.value)}
 					/>
+					<select
+						value={departmentFilter}
+						onChange={(event) => setDepartmentFilter(event.target.value)}
+					>
+						<option value="">Tất cả phòng ban</option>
+						{employeeDepartments.map((department) => (
+							<option key={department.id} value={String(department.id)}>
+								{department.ten_phong}
+							</option>
+						))}
+					</select>
+					<select
+						value={statusFilter}
+						onChange={(event) => setStatusFilter(event.target.value)}
+					>
+						<option value="">Tất cả trạng thái</option>
+						<option value="Đang làm">Đang làm</option>
+						<option value="Tạm nghỉ">Tạm nghỉ</option>
+						<option value="Nghỉ việc">Nghỉ việc</option>
+					</select>
+					<select
+						value={roleFilter}
+						onChange={(event) => setRoleFilter(event.target.value)}
+					>
+						<option value="">Tất cả quyền</option>
+						<option value="Admin">Admin</option>
+						<option value="Quản lý">Quản lý</option>
+						<option value="Nhân viên">Nhân viên</option>
+					</select>
 					<button type="button" onClick={() => fetchEmployees(1)}>
 						Tìm kiếm
 					</button>
@@ -321,44 +380,67 @@ function EmployeesPage({
 				<table>
 					<thead>
 						<tr>
-							<th>ID</th>
+							<th>#</th>
+							<th>Avatar</th>
 							<th>Họ tên</th>
 							<th>Email</th>
+							<th>SĐT</th>
+							<th>Giới tính</th>
+							<th>Ngày sinh</th>
 							<th>Phòng ban</th>
 							<th>Chức vụ</th>
+							<th>Ngày vào làm</th>
 							<th>Trạng thái</th>
+							<th>Vai trò</th>
 							<th>Thao tác</th>
 						</tr>
 					</thead>
 					<tbody>
 						{employeeLoading ? (
 							<tr>
-								<td colSpan="6">Đang tải dữ liệu...</td>
+								<td colSpan="13">Đang tải dữ liệu...</td>
 							</tr>
 						) : (
-							employeeRows.map((row) => (
+							filteredEmployeeRows.map((row, index) => (
 								<tr
 									key={row.id}
 									className="row-clickable"
 									onClick={() => openViewEmployee(row)}
 								>
 									<td>
-										<span className="data-emphasis">{row.id}</span>
+										<span className="data-emphasis">{index + 1}</span>
 									</td>
 									<td>
-										<span className="data-chip">{row.ho_ten}</span>
+										{renderAvatar(row)}
 									</td>
 									<td>
-										<span className="data-chip muted">{row.email}</span>
+										<a
+											href="#"
+											className="employee-name-link"
+											onClick={(event) => {
+												event.preventDefault();
+												event.stopPropagation();
+												openViewEmployee(row);
+											}}
+										>
+											{row.ho_ten}
+										</a>
 									</td>
 									<td>
-										<span className="data-chip">
+										<span className="employee-email">{row.email || "-"}</span>
+									</td>
+									<td>{row.so_dien_thoai || "-"}</td>
+									<td>{row.gioi_tinh || "-"}</td>
+									<td>{row.ngay_sinh || "-"}</td>
+									<td>
+										<span>
 											{departmentMap[String(row.phong_ban_id)] || row.phong_ban_id || "-"}
 										</span>
 									</td>
 									<td>
-										<span className="data-chip">{row.chuc_vu || "-"}</span>
+										<span>{row.chuc_vu || "-"}</span>
 									</td>
+									<td>{row.ngay_vao_lam || "-"}</td>
 									<td>
 										<span
 											className={`status-pill ${
@@ -369,34 +451,48 @@ function EmployeesPage({
 										</span>
 									</td>
 									<td>
-										<div className="row-actions">
+										<span
+											className={`employee-role-pill ${
+												String(row.vai_tro || "").toLowerCase().includes("admin")
+													? "admin"
+													: ""
+											}`}
+										>
+											{row.vai_tro || "-"}
+										</span>
+									</td>
+									<td>
+										<div className="row-actions employee-row-actions">
 											<button
 												type="button"
+												className="icon-action edit"
+												title="Sửa"
 												onClick={(event) => {
 													event.stopPropagation();
 													openEditEmployee(row);
 												}}
 											>
-												Sửa
+												✎
 											</button>
 											<button
 												type="button"
-												className="ghost"
+												className="icon-action delete"
+												title="Xóa"
 												onClick={(event) => {
 													event.stopPropagation();
 													deleteEmployee(row);
 												}}
 											>
-												Xóa
+												🗑
 											</button>
 										</div>
 									</td>
 								</tr>
 							))
 						)}
-						{!employeeLoading && employeeRows.length === 0 ? (
+						{!employeeLoading && filteredEmployeeRows.length === 0 ? (
 							<tr>
-								<td colSpan="7">Không có dữ liệu</td>
+								<td colSpan="13">Không có dữ liệu</td>
 							</tr>
 						) : null}
 					</tbody>

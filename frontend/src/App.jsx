@@ -8,6 +8,7 @@ import DashboardPage from "./pages/DashboardPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import LeavePage from "./pages/LeavePage";
+import LeaveStatsPage from "./pages/LeaveStatsPage";
 import LoginPage from "./pages/LoginPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import SalaryCalculatorPage from "./pages/SalaryCalculatorPage";
@@ -40,7 +41,7 @@ function App() {
 	const [leavePage, setLeavePage] = useState(1);
 	const [leavePageSize, setLeavePageSize] = useState(10);
 	const [leaveTotalPages, setLeaveTotalPages] = useState(0);
-	const [leaveStatusFilter, setLeaveStatusFilter] = useState("cho_duyet");
+	const [leaveStatusFilter, setLeaveStatusFilter] = useState("");
 	const [leaveStatus, setLeaveStatus] = useState({ type: "", message: "" });
 	const [leaveLoading, setLeaveLoading] = useState(false);
 	const [leaveFormOpen, setLeaveFormOpen] = useState(false);
@@ -226,7 +227,7 @@ function App() {
 		setLeavePage(1);
 		setLeavePageSize(10);
 		setLeaveTotalPages(0);
-		setLeaveStatusFilter("cho_duyet");
+		setLeaveStatusFilter("");
 		setLeaveStatus({ type: "", message: "" });
 		setLeaveFormOpen(false);
 		setLeaveForm({
@@ -521,7 +522,7 @@ function App() {
 		});
 	};
 
-	const fetchLeaveRequests = async (pageOverride) => {
+	const fetchLeaveRequests = async (pageOverride, selfOnly = false) => {
 		if (!user?.id) {
 			return;
 		}
@@ -538,7 +539,7 @@ function App() {
 			if (leaveStatusFilter) {
 				params.set("trang_thai", leaveStatusFilter);
 			}
-			if (!isAdminUser) {
+			if (selfOnly || !isAdminUser) {
 				params.set("nhan_vien_id", String(user.id));
 			}
 			const response = await fetch(
@@ -559,7 +560,7 @@ function App() {
 		}
 	};
 
-	const submitLeaveForm = async () => {
+	const submitLeaveForm = async (selfOnly = false) => {
 		if (!user?.id) {
 			return;
 		}
@@ -595,7 +596,7 @@ function App() {
 			setLeaveStatus({ type: "success", message: "Gui don nghi phep thanh cong." });
 			setLeaveFormOpen(false);
 			resetLeaveForm();
-			fetchLeaveRequests(1);
+			fetchLeaveRequests(1, selfOnly);
 		} catch (error) {
 			setLeaveStatus({ type: "error", message: error.message });
 		}
@@ -1702,8 +1703,25 @@ function App() {
 		{ label: "Dự án", icon: "project", to: "/projects" },
 		{ label: "Công việc", icon: "task", to: "/tasks" },
 		{ label: "Phòng ban", icon: "office", to: "/departments" },
-		{ label: "Chấm công", icon: "calendar", to: "/attendance" },
-		{ label: "Nghỉ phép", icon: "leave", to: "/leave" },
+		{
+			label: "Chấm công",
+			icon: "calendar",
+			to: "/attendance/manage",
+			children: [
+				{ label: "Quản lý chấm công", icon: "task", to: "/attendance/manage" },
+				{ label: "Chấm công", icon: "calendar", to: "/attendance" },
+			],
+		},
+		{
+			label: "Nghỉ phép",
+			icon: "leave",
+			to: "/leave/manage",
+			children: [
+				{ label: "Quản lý nghỉ phép", icon: "task", to: "/leave/manage" },
+				{ label: "Thống kê ngày phép", icon: "report", to: "/leave/stats" },
+				{ label: "Nghỉ phép", icon: "leave", to: "/leave" },
+			],
+		},
 		{ label: "Tính KPI", icon: "report", to: "/kpi-calculator" },
 		{ label: "Tính lương", icon: "salary", to: "/salary-calculator" },
 	];
@@ -1804,13 +1822,13 @@ function App() {
 				}
 			>
 				<Route path="/" element={<Navigate to="/dashboard" replace />} />
-				<Route path="/dashboard" element={<DashboardPage user={user} isAdmin={isAdmin} />} />
+				<Route path="/dashboard" element={<DashboardPage user={user} isAdmin={isAdmin} apiBase={API_BASE} />} />
 				<Route
 					path="/attendance"
 					element={
 						<AttendancePage
 							user={user}
-							isAdmin={isAdmin}
+							isAdmin={false}
 							attendanceToday={attendanceToday}
 							attendanceHistory={attendanceHistory}
 							attendanceStatus={attendanceStatus}
@@ -1825,11 +1843,35 @@ function App() {
 					}
 				/>
 				<Route
+					path="/attendance/manage"
+					element={
+						isAdmin ? (
+							<AttendancePage
+								user={user}
+								isAdmin={true}
+								attendanceToday={attendanceToday}
+								attendanceHistory={attendanceHistory}
+								attendanceStatus={attendanceStatus}
+								attendanceLoading={attendanceLoading}
+								fetchAttendanceToday={fetchAttendanceToday}
+								fetchAttendanceHistory={fetchAttendanceHistory}
+								submitCheckIn={submitCheckIn}
+								submitCheckOut={submitCheckOut}
+								submitAttendanceReport={submitAttendanceReport}
+								reviewAttendanceReport={reviewAttendanceReport}
+							/>
+						) : (
+							<Navigate to="/attendance" replace />
+						)
+					}
+				/>
+				<Route
 					path="/leave"
 					element={
 						<LeavePage
 							user={user}
-							isAdmin={isAdmin}
+							isAdmin={false}
+							scope="self"
 							leaveRows={leaveRows}
 							leaveTotal={leaveTotal}
 							leaveStatusFilter={leaveStatusFilter}
@@ -1842,10 +1884,49 @@ function App() {
 							setLeaveStatusFilter={setLeaveStatusFilter}
 							resetLeaveForm={resetLeaveForm}
 							fetchLeaveRequests={fetchLeaveRequests}
-							submitLeaveForm={submitLeaveForm}
+							submitLeaveForm={() => submitLeaveForm(true)}
 							approveLeaveRequest={approveLeaveRequest}
 							rejectLeaveRequest={rejectLeaveRequest}
 						/>
+					}
+				/>
+				<Route
+					path="/leave/manage"
+					element={
+						isAdmin ? (
+							<LeavePage
+								user={user}
+								isAdmin={true}
+								scope="manage"
+								leaveRows={leaveRows}
+								leaveTotal={leaveTotal}
+								leaveStatusFilter={leaveStatusFilter}
+								leaveStatus={leaveStatus}
+								leaveLoading={leaveLoading}
+								leaveFormOpen={leaveFormOpen}
+								leaveForm={leaveForm}
+								setLeaveFormOpen={setLeaveFormOpen}
+								setLeaveForm={setLeaveForm}
+								setLeaveStatusFilter={setLeaveStatusFilter}
+								resetLeaveForm={resetLeaveForm}
+								fetchLeaveRequests={fetchLeaveRequests}
+								submitLeaveForm={submitLeaveForm}
+								approveLeaveRequest={approveLeaveRequest}
+								rejectLeaveRequest={rejectLeaveRequest}
+							/>
+						) : (
+							<Navigate to="/leave" replace />
+						)
+					}
+				/>
+				<Route
+					path="/leave/stats"
+					element={
+						isAdmin ? (
+							<LeaveStatsPage user={user} apiBase={API_BASE} />
+						) : (
+							<Navigate to="/leave" replace />
+						)
 					}
 				/>
 				<Route

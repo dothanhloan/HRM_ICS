@@ -480,9 +480,13 @@ def list_lich_su(
 			  cham_cong.check_out,
 			  cham_cong.loai_cham_cong,
 			  cham_cong.trang_thai,
-			  nhanvien.ho_ten
+			  nhanvien.ho_ten,
+			  nhanvien.ngay_vao_lam,
+			  nhanvien.avatar_url,
+			  phong_ban.ten_phong AS phong_ban
 			FROM cham_cong
 			LEFT JOIN nhanvien ON nhanvien.id = cham_cong.nhan_vien_id
+			LEFT JOIN phong_ban ON phong_ban.id = nhanvien.phong_ban_id
 			WHERE {where_sql}
 			ORDER BY cham_cong.ngay DESC, cham_cong.id DESC
 			LIMIT :limit OFFSET :offset

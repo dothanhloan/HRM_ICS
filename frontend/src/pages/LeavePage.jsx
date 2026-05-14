@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 function LeavePage({
 	user,
 	isAdmin,
+	scope = "manage",
 	leaveRows,
 	leaveTotal,
 	leaveStatusFilter,
@@ -22,19 +23,23 @@ function LeavePage({
 	const [rejectModalOpen, setRejectModalOpen] = useState(false);
 	const [rejectReason, setRejectReason] = useState("");
 	const [rejectTarget, setRejectTarget] = useState(null);
+	const [detailTarget, setDetailTarget] = useState(null);
+	const [searchTerm, setSearchTerm] = useState("");
+	const [monthFilter, setMonthFilter] = useState("");
+	const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
 
 	useEffect(() => {
 		if (!user?.id) {
 			return;
 		}
-		fetchLeaveRequests(1);
-	}, [user?.id]);
+		fetchLeaveRequests(1, scope === "self");
+	}, [user?.id, scope]);
 
 	const statusLabels = useMemo(
 		() => ({
-			cho_duyet: "Cho duyet",
-			da_duyet: "Da duyet",
-			tu_choi: "Tu choi",
+			cho_duyet: "Chờ duyệt",
+			da_duyet: "Đã duyệt",
+			tu_choi: "Đã hủy",
 		}),
 		[]
 	);
@@ -76,6 +81,28 @@ function LeavePage({
 		);
 	}, [leaveRows]);
 
+	const filteredRows = useMemo(() => {
+		const normalizedSearch = searchTerm.trim().toLowerCase();
+		return leaveRows.filter((row) => {
+			const created = String(row.thoi_gian_tao || "");
+			const start = String(row.ngay_bat_dau || "");
+			const rowYear = (created || start).slice(0, 4);
+			const rowMonth = (created || start).slice(5, 7);
+			const matchesYear = !yearFilter || rowYear === yearFilter;
+			const matchesMonth = !monthFilter || rowMonth === monthFilter.padStart(2, "0");
+			const haystack = [
+				row.nhan_vien_ten,
+				row.nhan_vien_email,
+				row.phong_ban,
+				row.loai_phep,
+				row.ly_do,
+			]
+				.join(" ")
+				.toLowerCase();
+			return matchesYear && matchesMonth && (!normalizedSearch || haystack.includes(normalizedSearch));
+		});
+	}, [leaveRows, monthFilter, searchTerm, yearFilter]);
+
 	const statusClassMap = useMemo(
 		() => ({
 			cho_duyet: "status-pending",
@@ -100,18 +127,72 @@ function LeavePage({
 		setRejectTarget(null);
 	};
 
+	const formatDate = (value) => {
+		if (!value) {
+			return "-";
+		}
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) {
+			return String(value);
+		}
+		return date.toLocaleDateString("vi-VN");
+	};
+
+	const formatDateTime = (value) => {
+		if (!value) {
+			return "-";
+		}
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) {
+			return String(value);
+		}
+		return date.toLocaleString("vi-VN", {
+			day: "2-digit",
+			month: "2-digit",
+			year: "numeric",
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+	};
+
+	const getInitials = (name) =>
+		String(name || "NV")
+			.trim()
+			.split(/\s+/)
+			.slice(-2)
+			.map((part) => part.charAt(0).toUpperCase())
+			.join("") || "NV";
+
+	const renderEmployee = (row) => (
+		<div className="leave-employee-cell">
+			{row.nhan_vien_avatar ? (
+				<img className="attendance-avatar" src={row.nhan_vien_avatar} alt={row.nhan_vien_ten || "Nhan vien"} />
+			) : (
+				<span className="attendance-avatar placeholder">{getInitials(row.nhan_vien_ten)}</span>
+			)}
+			<div>
+				<strong>{row.nhan_vien_ten || row.nhan_vien_id}</strong>
+				<small>{row.phong_ban || row.nhan_vien_email || "-"}</small>
+			</div>
+		</div>
+	);
+
+	const runFilter = () => fetchLeaveRequests(1, scope === "self");
+	const openDetail = (row) => setDetailTarget(row);
+	const stopRowClick = (event) => event.stopPropagation();
+
 	return (
 		<section className="admin-section leave-page">
 			<div className="leave-hero">
 				<div className="leave-hero-content">
-					<h2>Xin nghỉ phép</h2>
-					<p>Quản lý và theo dõi đơn nghỉ phép của bạn</p>
+					<h2>{isAdmin ? "Quản lý nghỉ phép" : "Nghỉ phép"}</h2>
+					<p>{isAdmin ? "Theo dõi, duyệt và xử lý đơn nghỉ phép nhân viên" : "Tạo và quản lý đơn xin nghỉ phép của bạn"}</p>
 				</div>
 			</div>
 
 			<div className="admin-section-header">
 				<div>
-					<h3>Danh sách đơn nghỉ phép</h3>
+					<h3>{isAdmin ? "Danh sách đơn nghỉ phép" : "Lịch sử đơn nghỉ phép của bạn"}</h3>
 					<p>Tổng số: {leaveTotal ?? leaveRows.length} đơn</p>
 				</div>
 				<div className="admin-actions">
@@ -124,7 +205,28 @@ function LeavePage({
 						<option value="da_duyet">Đã duyệt</option>
 						<option value="tu_choi">Từ chối</option>
 					</select>
-					<button type="button" onClick={() => fetchLeaveRequests(1)}>
+					{isAdmin ? (
+						<>
+							<select value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)}>
+								<option value="">Tất cả tháng</option>
+								{Array.from({ length: 12 }, (_, index) => String(index + 1)).map((item) => (
+									<option key={item} value={item}>Tháng {item}</option>
+								))}
+							</select>
+							<select value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>
+								{Array.from({ length: 6 }, (_, index) => String(new Date().getFullYear() - 2 + index)).map((item) => (
+									<option key={item} value={item}>{item}</option>
+								))}
+							</select>
+							<input
+								type="search"
+								placeholder="Tìm theo tên nhân viên..."
+								value={searchTerm}
+								onChange={(event) => setSearchTerm(event.target.value)}
+							/>
+						</>
+					) : null}
+					<button type="button" onClick={runFilter}>
 						Tìm kiếm
 					</button>
 					{!isAdmin ? (
@@ -307,6 +409,61 @@ function LeavePage({
 				</div>
 			) : null}
 
+			{detailTarget ? (
+				<div className="modal-backdrop">
+					<div className="modal leave-detail-modal">
+						<div className="modal-header gradient">
+							<h3>Chi tiết đơn nghỉ phép</h3>
+							<button type="button" className="ghost" onClick={() => setDetailTarget(null)}>
+								Đóng
+							</button>
+						</div>
+						<div className="leave-detail-grid">
+							<div className="leave-detail-field">
+								<label>Nhân viên</label>
+								<strong>{detailTarget.nhan_vien_ten || detailTarget.nhan_vien_id}</strong>
+							</div>
+							<div className="leave-detail-field">
+								<label>Phòng ban</label>
+								<strong>{detailTarget.phong_ban || "-"}</strong>
+							</div>
+							<div className="leave-detail-field">
+								<label>Loại phép</label>
+								<strong>{leaveTypeLabels[detailTarget.loai_phep] || detailTarget.loai_phep || "-"}</strong>
+							</div>
+							<div className="leave-detail-field">
+								<label>Trạng thái</label>
+								<span className={`status-pill ${statusClassMap[detailTarget.trang_thai] || "status-muted"}`}>
+									{statusLabels[detailTarget.trang_thai] || detailTarget.trang_thai}
+								</span>
+							</div>
+							<div className="leave-detail-field wide">
+								<label>Thời gian nghỉ</label>
+								<strong>{formatDate(detailTarget.ngay_bat_dau)} đến {formatDate(detailTarget.ngay_ket_thuc)}</strong>
+							</div>
+							<div className="leave-detail-field">
+								<label>Số ngày</label>
+								<span className="leave-days-badge">{detailTarget.so_ngay ?? "-"} ngày</span>
+							</div>
+							<div className="leave-detail-field">
+								<label>Ngày tạo đơn</label>
+								<strong>{formatDateTime(detailTarget.thoi_gian_tao)}</strong>
+							</div>
+							<div className="leave-detail-field wide">
+								<label>Lý do</label>
+								<p>{detailTarget.ly_do || "-"}</p>
+							</div>
+							{detailTarget.ghi_chu || detailTarget.ly_do_tu_choi ? (
+								<div className="leave-detail-field wide">
+									<label>Ghi chú</label>
+									<p>{detailTarget.ghi_chu || detailTarget.ly_do_tu_choi}</p>
+								</div>
+							) : null}
+						</div>
+					</div>
+				</div>
+			) : null}
+
 			{leaveStatus.message && !leaveFormOpen ? (
 				<div className={`alert ${leaveStatus.type}`}>
 					{leaveStatus.message}
@@ -317,53 +474,51 @@ function LeavePage({
 				<table>
 					<thead>
 						<tr>
-							<th>ID</th>
-							<th>Nhân viên</th>
-							<th>Loại nghỉ</th>
-							<th>Ngày bắt đầu</th>
-							<th>Ngày kết thúc</th>
+							<th>#</th>
+							{isAdmin ? <th>Nhân viên</th> : null}
+							<th>Loại phép</th>
+							<th>Thời gian nghỉ</th>
 							<th>Số ngày</th>
-							<th>Trạng thái</th>
 							<th>Lý do</th>
-							<th>Ghi chú</th>
-							<th>Người duyệt</th>
-							{isAdmin ? <th>Thao tác</th> : null}
+							<th>Trạng thái</th>
+							<th>Ngày tạo</th>
+							<th>Thao tác</th>
 						</tr>
 					</thead>
 					<tbody>
 						{leaveLoading ? (
 							<tr>
-								<td colSpan={isAdmin ? 11 : 10}>Đang tải dữ liệu...</td>
+								<td colSpan={isAdmin ? 9 : 8}>Đang tải dữ liệu...</td>
 							</tr>
-						) : leaveRows.length === 0 ? (
+						) : filteredRows.length === 0 ? (
 							<tr>
-								<td colSpan={isAdmin ? 11 : 10}>Chưa có đơn nghỉ phép.</td>
+								<td colSpan={isAdmin ? 9 : 8}>Chưa có đơn nghỉ phép.</td>
 							</tr>
 						) : (
-							leaveRows.map((row) => (
-								<tr key={row.id}>
+							filteredRows.map((row, index) => (
+								<tr
+									key={row.id}
+									className={isAdmin ? "leave-clickable-row" : ""}
+									onClick={isAdmin ? () => openDetail(row) : undefined}
+								>
 									<td>
-										<span className="data-emphasis">{row.id}</span>
+										<span className="data-emphasis">{index + 1}</span>
 									</td>
+									{isAdmin ? <td>{renderEmployee(row)}</td> : null}
 									<td>
-										<span className="data-chip">
-											{row.nhan_vien_ten || row.nhan_vien_id}
-										</span>
-									</td>
-									<td>
-										<span className="data-chip">
+										<span className="data-chip leave-type-chip">
 											{leaveTypeLabels[row.loai_phep] || row.loai_phep || "-"}
 										</span>
 									</td>
 									<td>
-										<span className="data-emphasis">{row.ngay_bat_dau || "-"}</span>
+										<span className="leave-date-range">
+											{formatDate(row.ngay_bat_dau)} → {formatDate(row.ngay_ket_thuc)}
+										</span>
 									</td>
 									<td>
-										<span className="data-emphasis">{row.ngay_ket_thuc || "-"}</span>
+										<span className="leave-days-badge">{row.so_ngay ?? "-"} ngày</span>
 									</td>
-									<td>
-										<span className="data-emphasis">{row.so_ngay ?? "-"}</span>
-									</td>
+									<td>{row.ly_do || "-"}</td>
 									<td>
 										<span
 											className={`status-pill ${statusClassMap[row.trang_thai] || "status-muted"}`}
@@ -371,34 +526,38 @@ function LeavePage({
 											{statusLabels[row.trang_thai] || row.trang_thai}
 										</span>
 									</td>
-									<td>{row.ly_do || "-"}</td>
-									<td>{row.ghi_chu || row.ly_do_tu_choi || "-"}</td>
 									<td>
-										<span className="data-chip muted">
-											{row.nguoi_duyet_ten || row.nguoi_duyet_id || "-"}
-										</span>
+										<span className="leave-created-at">{formatDateTime(row.thoi_gian_tao)}</span>
 									</td>
-									{isAdmin ? (
-										<td>
-											<div className="row-actions">
-												<button
-													type="button"
-													disabled={row.trang_thai !== "cho_duyet"}
-													onClick={() => approveLeaveRequest(row.id)}
-												>
-													Duyet
-												</button>
-												<button
-													type="button"
-													className="ghost"
-													disabled={row.trang_thai !== "cho_duyet"}
-													onClick={() => openRejectModal(row)}
-												>
-													Từ chối
-												</button>
-											</div>
-										</td>
-									) : null}
+									<td>
+										<div className="row-actions leave-row-actions" onClick={stopRowClick}>
+											<button type="button" className="icon-action view" title="Xem chi tiết" onClick={() => setDetailTarget(row)}>
+												👁
+											</button>
+											{isAdmin ? (
+												<>
+													<button
+														type="button"
+														className="icon-action approve"
+														title="Duyệt"
+														disabled={row.trang_thai !== "cho_duyet"}
+														onClick={() => approveLeaveRequest(row.id)}
+													>
+														✓
+													</button>
+													<button
+														type="button"
+														className="icon-action reject"
+														title="Từ chối"
+														disabled={row.trang_thai !== "cho_duyet"}
+														onClick={() => openRejectModal(row)}
+													>
+														×
+													</button>
+												</>
+											) : null}
+										</div>
+									</td>
 								</tr>
 							))
 						)}
