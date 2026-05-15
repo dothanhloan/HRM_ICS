@@ -118,6 +118,152 @@ function LegacyEmployeeDashboard({ user, isAdmin }) {
 	);
 }
 
+function EmployeeDashboard({ user, data, status }) {
+	const now = new Date();
+	const month = now.getMonth() + 1;
+	const year = now.getFullYear();
+	const todayText = now.toLocaleDateString("vi-VN", {
+		weekday: "long",
+		day: "numeric",
+		month: "long",
+		year: "numeric",
+	});
+	const completedTasks = data.tasks.rows.filter((row) => isDone(row.trang_thai)).length;
+	const doingTasks = data.tasks.rows.filter((row) => isDoing(row.trang_thai)).length;
+	const notStartedTasks = data.tasks.rows.filter((row) => isNotStarted(row.trang_thai)).length;
+	const totalTasks = data.tasks.total || data.tasks.rows.length;
+	const overdueTasks = data.tasks.rows.filter((row) => {
+		const deadline = row.han_hoan_thanh ? new Date(row.han_hoan_thanh).getTime() : null;
+		return deadline && deadline < Date.now() && !isDone(row.trang_thai);
+	}).length;
+	const taskCompletionRate = totalTasks ? Math.round((completedTasks / totalTasks) * 100) : 0;
+	const lateAttendance = data.attendance.rows.filter((row) =>
+		normalizeText(row.trang_thai_hien_tai || row.trang_thai).includes("tre")
+	).length;
+	const totalHours = data.attendance.rows.reduce(
+		(sum, row) => sum + (Number(row.so_gio_lam) || 0),
+		0
+	);
+	const department =
+		data.departments.rows.find((row) => Number(row.id) === Number(user?.phong_ban_id)) || {};
+	const latestPayroll = data.payroll.rows[0];
+	const latestKpi = data.kpi.rows[0];
+	const kpiScore =
+		latestKpi?.diem_trung_binh ??
+		latestKpi?.diem_kpi ??
+		latestKpi?.tong_diem ??
+		0;
+	const unreadNotifications = data.notifications.rows.filter(
+		(row) => Number(row.nguoi_nhan_id) === Number(user.id) && !row.da_doc
+	).length;
+	const todoRows = data.tasks.rows.filter(
+		(row) => isDoing(row.trang_thai) || isNotStarted(row.trang_thai)
+	);
+	const formatNumber = (value) => {
+		const number = Number(value);
+		return Number.isFinite(number) ? number.toLocaleString("vi-VN") : value || "0";
+	};
+
+	return (
+		<section className="employee-dashboard-page">
+			<div className="employee-dashboard-heading">
+				<h2>
+					<span aria-hidden="true">▦</span>
+					Thông tin phòng ban
+				</h2>
+				<p>
+					<span aria-hidden="true">▣</span>
+					{todayText}
+				</p>
+			</div>
+
+			{status.message ? <div className={`alert ${status.type}`}>{status.message}</div> : null}
+
+			<div className="employee-info-grid">
+				<div className="employee-info-card">
+					<h3>
+						<span aria-hidden="true">▦</span>
+						{department.ten_phong || user.phong_ban || "Chưa có phòng ban"}
+					</h3>
+					<p><strong>Trưởng phòng:</strong> {department.truong_phong || "-"}</p>
+					<p><strong>Số nhân viên:</strong> {department.so_nhan_vien ?? "-"} người</p>
+					<p><strong>Số công việc:</strong> {totalTasks} task</p>
+				</div>
+				<div className="employee-info-card">
+					<h3>
+						<span aria-hidden="true">▣</span>
+						Chấm công tháng {month}/{year}
+					</h3>
+					<p><strong>Số ngày đã chấm:</strong> {data.attendance.total} ngày</p>
+					<p><strong>Số ngày đi trễ:</strong> {lateAttendance} ngày</p>
+					<p><strong>Tổng giờ làm:</strong> {totalHours.toFixed(1)} giờ</p>
+				</div>
+				<div className="employee-info-card">
+					<h3>
+						<span aria-hidden="true">▣</span>
+						Lương & KPI tháng {month}/{year}
+					</h3>
+					<p>
+						{latestPayroll
+							? `Thực lĩnh: ${formatNumber(latestPayroll.thuc_linh ?? latestPayroll.tong_luong)} VNĐ`
+							: "Chưa có dữ liệu lương"}
+					</p>
+					<p><strong>Điểm KPI TB:</strong> <span className="employee-kpi-score">{kpiScore}/10</span></p>
+				</div>
+			</div>
+
+			<div className="employee-report-card">
+				<h3><span aria-hidden="true">◔</span>Báo cáo nhanh - Công việc của tôi</h3>
+				<div className="employee-report-body">
+					<DonutChart
+						total={Math.max(totalTasks, 1)}
+						center={`${totalTasks} CV`}
+						label="Tổng"
+						segments={[
+							{ value: completedTasks, color: "#06965a" },
+							{ value: doingTasks, color: "#655df6" },
+							{ value: overdueTasks, color: "#e11d1d" },
+							{ value: notStartedTasks, color: "#6b7280" },
+						]}
+					/>
+					<div className="employee-report-stats">
+						<div><i style={{ background: "#06965a" }} /><span>Đã hoàn thành: <strong>{completedTasks}</strong></span><small>{taskCompletionRate}%</small></div>
+						<div><i style={{ background: "#655df6" }} /><span>Đang thực hiện: <strong>{doingTasks}</strong></span><small>{totalTasks ? Math.round((doingTasks / totalTasks) * 100) : 0}%</small></div>
+						<div><i style={{ background: "#e11d1d" }} /><span>Trễ hạn: <strong>{overdueTasks}</strong></span><small>{totalTasks ? Math.round((overdueTasks / totalTasks) * 100) : 0}%</small></div>
+						<div><i style={{ background: "#6b7280" }} /><span>Chưa bắt đầu: <strong>{notStartedTasks}</strong></span><small>{totalTasks ? Math.round((notStartedTasks / totalTasks) * 100) : 0}%</small></div>
+						<p>Tổng: <strong>{totalTasks}</strong> công việc</p>
+					</div>
+				</div>
+			</div>
+
+			<div className="employee-notification-strip">
+				<span aria-hidden="true">♟</span>
+				Bạn có <strong>{unreadNotifications}</strong> thông báo chưa đọc.
+				<Link to="/notifications">Xem ngay</Link>
+			</div>
+
+			<div className="employee-todo-card">
+				<h3><span aria-hidden="true">☷</span>Todo công việc của tôi</h3>
+				{todoRows.length ? (
+					<div className="employee-todo-list">
+						{todoRows.slice(0, 6).map((task) => (
+							<div className="employee-todo-row" key={task.id}>
+								<div>
+									<strong>{task.ten_cong_viec || `Công việc #${task.id}`}</strong>
+									<span>{task.ten_du_an || task.phong_ban || "Chưa gắn dự án"}</span>
+								</div>
+								<em>{task.trang_thai || "-"}</em>
+							</div>
+						))}
+					</div>
+				) : (
+					<p>Không có công việc ở trạng thái Chưa bắt đầu hoặc Đang thực hiện.</p>
+				)}
+			</div>
+		</section>
+	);
+}
+
 function DashboardPage({ user, isAdmin, apiBase }) {
 	const [loading, setLoading] = useState(false);
 	const [status, setStatus] = useState({ type: "", message: "" });
@@ -130,6 +276,7 @@ function DashboardPage({ user, isAdmin, apiBase }) {
 		attendance: { total: 0, rows: [] },
 		kpi: { total: 0, rows: [] },
 		payroll: { total: 0, rows: [] },
+		notifications: { total: 0, rows: [] },
 	});
 	const [selectedGroup, setSelectedGroup] = useState("");
 
@@ -154,7 +301,7 @@ function DashboardPage({ user, isAdmin, apiBase }) {
 				const now = new Date();
 				const month = now.getMonth() + 1;
 				const year = now.getFullYear();
-				const [employees, departments, tasks, projects, attendance, leaves, kpi, payroll] = isAdmin
+				const [employees, departments, tasks, projects, attendance, leaves, kpi, payroll, notifications] = isAdmin
 					? await Promise.all([
 							fetchJson("/api/v1/nhanvien?page=1&page_size=500"),
 							fetchJson("/api/v1/phong_ban/danh_sach?page=1&page_size=200"),
@@ -164,17 +311,22 @@ function DashboardPage({ user, isAdmin, apiBase }) {
 							Promise.resolve({ total: 0, data: [] }),
 							Promise.resolve({ total: 0, data: [] }),
 							Promise.resolve({ total: 0, data: [] }),
+							Promise.resolve({ total: 0, data: [] }),
 					  ])
 					: await Promise.all([
 							Promise.resolve({ total: 1, data: [user] }),
-							Promise.resolve({ total: user.phong_ban_id ? 1 : 0, data: [] }),
+							fetchJson("/api/v1/phong_ban/danh_sach?page=1&page_size=200"),
 							fetchJson(`/api/v1/cong_viec/danh_sach?scope=mine&actor=employee&nhan_vien_id=${user.id}&page=1&page_size=8`),
 							fetchJson(`/api/v1/du_an/danh_sach?actor=employee&nhan_vien_id=${user.id}&page=1&page_size=8`),
 							fetchJson(`/api/v1/cham_cong/lich_su?page=1&page_size=12&nhan_vien_id=${user.id}`),
 							fetchJson(`/api/v1/don_nghi_phep/danh_sach?actor_id=${user.id}&nhan_vien_id=${user.id}&page=1&page_size=8`),
 							fetchJson(`/api/v1/kpi_tinh_toan/danh_sach?actor_id=${user.id}&actor_role=${actorRole}&thang=${month}&nam=${year}&target_nhan_vien_id=${user.id}&page=1&page_size=8`),
 							fetchJson(`/api/v1/luong_tinh_toan/danh_sach?actor_id=${user.id}&actor_role=${actorRole}&thang=${month}&nam=${year}&target_nhan_vien_id=${user.id}&page=1&page_size=8`),
+							fetchJson("/api/v1/thong_bao?limit=200").catch(() => []),
 					  ]);
+				const notificationRows = Array.isArray(notifications)
+					? notifications
+					: notifications.data || [];
 				setData({
 					employees: { total: employees.total || 0, rows: employees.data || [] },
 					departments: { total: departments.total || 0, rows: departments.data || [] },
@@ -184,6 +336,7 @@ function DashboardPage({ user, isAdmin, apiBase }) {
 					leaves: { total: leaves.total || 0, rows: leaves.data || [] },
 					kpi: { total: kpi.total || 0, rows: kpi.data || [] },
 					payroll: { total: payroll.total || 0, rows: payroll.data || [] },
+					notifications: { total: notificationRows.length, rows: notificationRows },
 				});
 			} catch (error) {
 				setStatus({ type: "error", message: error.message });
@@ -317,6 +470,7 @@ function DashboardPage({ user, isAdmin, apiBase }) {
 	}, [data, selectedGroup]);
 
 	if (!isAdmin) {
+		return <EmployeeDashboard user={user} data={data} status={status} />;
 		const completedTasks = data.tasks.rows.filter((row) => isDone(row.trang_thai)).length;
 		const lateAttendance = data.attendance.rows.filter((row) =>
 			normalizeText(row.trang_thai_hien_tai || row.trang_thai).includes("tre")
@@ -327,52 +481,58 @@ function DashboardPage({ user, isAdmin, apiBase }) {
 			const date = new Date(value);
 			return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString("vi-VN");
 		};
+		const openTasks = Math.max(data.tasks.total - completedTasks, 0);
+		const latestAttendance = data.attendance.rows[0];
+		const latestPayroll = data.payroll.rows[0];
+		const latestKpi = data.kpi.rows[0];
+		const taskCompletionRate = data.tasks.total
+			? Math.round((completedTasks / data.tasks.total) * 100)
+			: 0;
 		return (
 			<section className="dashboard-page">
-				<div className="dashboard-hero">
+				<div className="employee-dashboard-top">
 					<div>
-						<span className="dashboard-kicker">Tổng quan dữ liệu cá nhân</span>
-						<h2>Dashboard {user?.vai_tro || "Nhân viên"}</h2>
-						<p>Chào {user?.ho_ten || "bạn"}, đây là bảng điều khiển tổng hợp các module chính của bạn trong hệ thống HRM.</p>
+						<span className="dashboard-kicker">Không gian làm việc</span>
+						<h2>Tổng quan cá nhân</h2>
+						<p>Theo dõi công việc, chấm công, nghỉ phép, KPI và lương trong một màn hình.</p>
 					</div>
-					<div className="dashboard-hero-status">
-						<strong>{loading ? "Đang cập nhật" : "Đã đồng bộ"}</strong>
-						<span>Dữ liệu cá nhân</span>
-					</div>
+					<Link className="employee-primary-action" to="/attendance">
+						Mở chấm công
+					</Link>
 				</div>
 
 				{status.message ? <div className={`alert ${status.type}`}>{status.message}</div> : null}
 
 				<div className="dashboard-summary-grid">
-					<Link className="dashboard-summary-card violet" to="/projects"><span>Dự án của tôi</span><strong>{data.projects.total}</strong><small>Dự án liên quan</small></Link>
-					<Link className="dashboard-summary-card green" to="/tasks"><span>Việc của tôi</span><strong>{data.tasks.total}</strong><small>{completedTasks} đã hoàn thành</small></Link>
-					<Link className="dashboard-summary-card blue" to="/attendance"><span>Ngày chấm công</span><strong>{data.attendance.total}</strong><small>{lateAttendance} lần đi trễ</small></Link>
-					<Link className="dashboard-summary-card cyan" to="/leave"><span>Đơn nghỉ phép</span><strong>{data.leaves.total}</strong><small>{pendingLeaves} đơn chờ duyệt</small></Link>
+					<Link className="dashboard-summary-card green" to="/tasks"><span>Công việc mở</span><strong>{openTasks}</strong><small>{taskCompletionRate}% đã hoàn thành</small></Link>
+					<Link className="dashboard-summary-card blue" to="/attendance"><span>Chấm công</span><strong>{data.attendance.total}</strong><small>{lateAttendance} lần đi trễ</small></Link>
+					<Link className="dashboard-summary-card cyan" to="/leave"><span>Nghỉ phép</span><strong>{pendingLeaves}</strong><small>Đơn đang chờ duyệt</small></Link>
+					<Link className="dashboard-summary-card violet" to="/projects"><span>Dự án</span><strong>{data.projects.total}</strong><small>Dự án liên quan</small></Link>
 				</div>
 
 				<div className="dashboard-content-grid">
-					<div className="dashboard-panel wide">
-						<div className="dashboard-panel-header"><div><h3>Tình trạng cá nhân</h3><p>Các module quan trọng và số liệu hiện tại</p></div></div>
-						<div className="dashboard-module-grid">
-							<Link className="dashboard-module-card" to="/attendance"><span>Chấm công</span><strong>{data.attendance.total}</strong><small>Lịch sử cá nhân</small></Link>
-							<Link className="dashboard-module-card" to="/leave"><span>Nghỉ phép</span><strong>{data.leaves.total}</strong><small>{pendingLeaves} đang chờ xử lý</small></Link>
-							<Link className="dashboard-module-card" to="/kpi-calculator"><span>KPI</span><strong>{data.kpi.total}</strong><small>Kỳ hiện tại</small></Link>
-							<Link className="dashboard-module-card" to="/salary-calculator"><span>Lương</span><strong>{data.payroll.total}</strong><small>Bảng lương cá nhân</small></Link>
+					<div className="dashboard-panel employee-status-panel">
+						<div className="dashboard-panel-header"><div><h3>Trạng thái hôm nay</h3><p>Dữ liệu vận hành cá nhân</p></div></div>
+						<div className="employee-status-grid">
+							<div><span>Check-in gần nhất</span><strong>{latestAttendance?.check_in || "-"}</strong><small>{formatDate(latestAttendance?.ngay)}</small></div>
+							<div><span>Check-out gần nhất</span><strong>{latestAttendance?.check_out || "-"}</strong><small>{latestAttendance?.trang_thai_hien_tai || latestAttendance?.trang_thai || "-"}</small></div>
+							<div><span>KPI kỳ này</span><strong>{latestKpi?.tong_diem ?? latestKpi?.diem_kpi ?? "-"}</strong><small>{data.kpi.total ? "Đã có dữ liệu" : "Chưa ghi nhận"}</small></div>
+							<div><span>Lương kỳ này</span><strong>{latestPayroll?.thuc_linh ?? latestPayroll?.tong_luong ?? "-"}</strong><small>{data.payroll.total ? "Bảng lương mới nhất" : "Chưa ghi nhận"}</small></div>
 						</div>
 					</div>
 
 					<div className="dashboard-panel">
-						<div className="dashboard-panel-header"><div><h3>Công việc gần đây</h3><p>Được giao cho bạn</p></div><Link to="/tasks">Mở</Link></div>
+						<div className="dashboard-panel-header"><div><h3>Công việc ưu tiên</h3><p>Cần theo dõi trong thời gian gần</p></div><Link to="/tasks">Xem tất cả</Link></div>
 						<div className="dashboard-list">
 							{data.tasks.rows.slice(0, 5).map((task) => (
-								<div className="dashboard-list-row" key={task.id}><div><strong>{task.ten_cong_viec || `Công việc #${task.id}`}</strong><span>{task.ten_du_an || task.phong_ban || "Chưa gắn dự án"}</span></div><em>{task.trang_thai || "-"}</em></div>
+								<div className="dashboard-list-row task-row" key={task.id}><div><strong>{task.ten_cong_viec || `Công việc #${task.id}`}</strong><span>{task.ten_du_an || task.phong_ban || "Chưa gắn dự án"}</span></div><em>{task.trang_thai || "-"}</em></div>
 							))}
 							{data.tasks.rows.length === 0 ? <p className="dashboard-empty">Chưa có công việc.</p> : null}
 						</div>
 					</div>
 
 					<div className="dashboard-panel">
-						<div className="dashboard-panel-header"><div><h3>Nghỉ phép</h3><p>{pendingLeaves} đơn đang chờ duyệt</p></div><Link to="/leave">Mở</Link></div>
+						<div className="dashboard-panel-header"><div><h3>Nghỉ phép</h3><p>Theo dõi đơn nghỉ phép cá nhân</p></div><Link to="/leave">Tạo đơn</Link></div>
 						<div className="dashboard-list">
 							{data.leaves.rows.slice(0, 5).map((leave) => (
 								<div className="dashboard-list-row" key={leave.id}><div><strong>{leave.loai_phep || `Đơn #${leave.id}`}</strong><span>{formatDate(leave.ngay_bat_dau)} - {formatDate(leave.ngay_ket_thuc)}</span></div><em>{leave.trang_thai || "-"}</em></div>
@@ -382,7 +542,7 @@ function DashboardPage({ user, isAdmin, apiBase }) {
 					</div>
 
 					<div className="dashboard-panel wide">
-						<div className="dashboard-panel-header"><div><h3>Chấm công gần đây</h3><p>Lịch sử của bạn</p></div><Link to="/attendance">Mở</Link></div>
+						<div className="dashboard-panel-header"><div><h3>Lịch sử chấm công</h3><p>6 bản ghi gần nhất</p></div><Link to="/attendance">Xem chi tiết</Link></div>
 						<div className="dashboard-attendance-strip">
 							{data.attendance.rows.slice(0, 6).map((row) => (
 								<div className="dashboard-attendance-item" key={row.id}><span>{formatDate(row.ngay)}</span><strong>{row.ho_ten || user?.ho_ten}</strong><small>{row.check_in || "-"} / {row.check_out || "-"}</small><em>{row.trang_thai_hien_tai || row.trang_thai || "-"}</em></div>

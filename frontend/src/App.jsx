@@ -4,12 +4,14 @@ import "./styles/login.css";
 
 import AppLayout from "./components/AppLayout";
 import AttendancePage from "./pages/AttendancePage";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
 import DashboardPage from "./pages/DashboardPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import LeavePage from "./pages/LeavePage";
 import LeaveStatsPage from "./pages/LeaveStatsPage";
 import LoginPage from "./pages/LoginPage";
+import ProfilePage from "./pages/ProfilePage";
 import ProjectsPage from "./pages/ProjectsPage";
 import SalaryCalculatorPage from "./pages/SalaryCalculatorPage";
 import TasksPage from "./pages/TasksPage";
@@ -288,6 +290,31 @@ function App() {
 		setDepartmentTransferId("");
 		setDepartmentLeaders([]);
 		navigate("/login");
+	};
+
+	const fetchUserProfile = async (userId) => {
+		const response = await fetch(`${API_BASE}/api/v1/auth/profile/${userId}`);
+		const data = await response.json();
+		if (!response.ok) {
+			throw new Error(data.detail || "Khong the tai ho so ca nhan");
+		}
+		if (data.data) {
+			setUser((prev) => ({ ...(prev || {}), ...data.data }));
+		}
+		return data.data;
+	};
+
+	const changeUserPassword = async ({ user_id, old_password, new_password }) => {
+		const response = await fetch(`${API_BASE}/api/v1/auth/change_password`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ user_id, old_password, new_password }),
+		});
+		const data = await response.json();
+		if (!response.ok) {
+			throw new Error(data.detail || "Khong the doi mat khau");
+		}
+		return data;
 	};
 
 	const fetchAttendanceToday = async (nhanVienId) => {
@@ -1687,7 +1714,7 @@ function App() {
 	};
 
 	const menuItems = [
-		{ label: "Bảng điều khiển", icon: "chart", to: "/dashboard" },
+		{ label: "Dashboard", icon: "chart", to: "/dashboard" },
 		{ label: "Dự án", icon: "project", to: "/projects" },
 		{ label: "Công việc", icon: "task", to: "/tasks" },
 		{ label: "Phòng ban", icon: "office", to: "/departments" },
@@ -1729,57 +1756,111 @@ function App() {
 	const iconMap = {
 		chart: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M4 19h16v2H2V5h2v14Zm4-6h3v4H8v-4Zm5-6h3v10h-3V7Zm5 3h3v7h-3v-7Z" />
+				<path d="M4 19V5" />
+				<path d="M4 19h16" />
+				<path d="M8 16v-4" />
+				<path d="M12 16V8" />
+				<path d="M16 16v-6" />
 			</svg>
 		),
 		people: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M7 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm10-1a3 3 0 1 1 0-6 3 3 0 0 1 0 6ZM2 21v-1a6 6 0 0 1 12 0v1H2Zm14 0v-1a5 5 0 0 1 6 4v-3a4 4 0 0 0-6 0Z" />
+				<path d="M8 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+				<path d="M16 10a3 3 0 1 0 0-6" />
+				<path d="M3 20a5 5 0 0 1 10 0" />
+				<path d="M14 19a4.5 4.5 0 0 1 6-3.8" />
 			</svg>
 		),
 		project: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M4 6h7l2 2h7v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm0 2v10h16V10H12l-2-2H4Z" />
+				<path d="M4 6h6l2 2h8v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" />
+				<path d="M8 13h8" />
+				<path d="M8 16h5" />
 			</svg>
 		),
 		office: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M4 4h10v16H4V4Zm12 4h4v12h-4V8ZM6 6v2h2V6H6Zm0 4v2h2v-2H6Zm0 4v2h2v-2H6Zm4-8v2h2V6h-2Zm0 4v2h2v-2h-2Zm0 4v2h2v-2h-2Z" />
+				<path d="M4 20V5a1 1 0 0 1 1-1h9v16" />
+				<path d="M14 9h5a1 1 0 0 1 1 1v10" />
+				<path d="M3 20h18" />
+				<path d="M8 8h2" />
+				<path d="M8 12h2" />
+				<path d="M8 16h2" />
 			</svg>
 		),
 		task: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M9 3h12v2H9V3Zm0 8h12v2H9v-2Zm0 8h12v2H9v-2ZM3 4l2-2 1.5 1.5L4 6 3 4Zm0 8 2-2 1.5 1.5L4 14 3 12Zm0 8 2-2 1.5 1.5L4 22 3 20Z" />
+				<path d="M9 6h11" />
+				<path d="M9 12h11" />
+				<path d="M9 18h11" />
+				<path d="M4 6h.01" />
+				<path d="M4 12h.01" />
+				<path d="M4 18h.01" />
 			</svg>
 		),
 		calendar: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M7 2h2v3H7V2Zm8 0h2v3h-2V2ZM4 6h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm0 4v10h16V10H4Zm3 3h4v4H7v-4Z" />
+				<path d="M7 3v4" />
+				<path d="M17 3v4" />
+				<path d="M4 8h16" />
+				<path d="M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+				<path d="M8 12h4v4H8z" />
 			</svg>
 		),
 		leave: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M6 2h12v2H6V2Zm1 4h10l1 14H6L7 6Zm3 3v6h2V9h-2Zm4 0v6h2V9h-2Z" />
+				<path d="M8 4h8" />
+				<path d="M9 4v3" />
+				<path d="M15 4v3" />
+				<path d="M7 7h10l-1 13H8L7 7Z" />
+				<path d="M10 11v5" />
+				<path d="M14 11v5" />
 			</svg>
 		),
 		schedule: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm1 5h-2v6l5 3 1-1.7-4-2.3V7Z" />
+				<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+				<path d="M12 7v5l3 2" />
 			</svg>
 		),
 		salary: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M3 6h18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm0 2v8h18V8H3Zm9 1a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z" />
+				<path d="M4 7h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+				<path d="M12 10v4" />
+				<path d="M9 12h6" />
+				<path d="M6 12h.01" />
+				<path d="M18 12h.01" />
 			</svg>
 		),
 		report: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M4 4h14l2 2v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 2v14h14V7.5L16.5 6H4Zm3 4h8v2H7v-2Zm0 4h8v2H7v-2Z" />
+				<path d="M5 4h12l2 2v14H5V4Z" />
+				<path d="M9 9h6" />
+				<path d="M9 13h6" />
+				<path d="M9 17h4" />
+			</svg>
+		),
+		key: (
+			<svg viewBox="0 0 24 24" aria-hidden="true">
+				<path d="M15 7a4 4 0 1 1-2.8-3.8" />
+				<path d="M12 12 4 20" />
+				<path d="m6 18 2 2" />
+				<path d="m9 15 2 2" />
+			</svg>
+		),
+		logout: (
+			<svg viewBox="0 0 24 24" aria-hidden="true">
+				<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+				<path d="M16 17l5-5-5-5" />
+				<path d="M21 12H9" />
 			</svg>
 		),
 		library: (
 			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<path d="M4 4h8v16H4V4Zm10 0h6v16h-6V4ZM6 6v12h4V6H6Zm10 0v12h2V6h-2Z" />
+				<path d="M4 5h7v15H4V5Z" />
+				<path d="M13 5h7v15h-7V5Z" />
+				<path d="M7 9h1" />
+				<path d="M16 9h1" />
 			</svg>
 		),
 	};
@@ -1823,6 +1904,14 @@ function App() {
 			>
 				<Route path="/" element={<Navigate to="/dashboard" replace />} />
 				<Route path="/dashboard" element={<DashboardPage user={user} isAdmin={isAdmin} apiBase={API_BASE} />} />
+				<Route
+					path="/profile"
+					element={<ProfilePage user={user} fetchProfile={fetchUserProfile} />}
+				/>
+				<Route
+					path="/change-password"
+					element={<ChangePasswordPage user={user} changePassword={changeUserPassword} />}
+				/>
 				<Route
 					path="/attendance"
 					element={
