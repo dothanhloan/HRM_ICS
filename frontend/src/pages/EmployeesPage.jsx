@@ -14,6 +14,8 @@ function EmployeesPage({
 	employeeForm,
 	employeeDepartments,
 	employeeDepartmentsLoading,
+	employeePermissions,
+	employeePermissionsLoading,
 	deleteTarget,
 	setEmployeeQuery,
 	setEmployeeFormOpen,
@@ -23,6 +25,7 @@ function EmployeesPage({
 	resetEmployeeForm,
 	fetchEmployees,
 	fetchEmployeeDepartments,
+	fetchEmployeePermissions,
 	openCreateEmployee,
 	openEditEmployee,
 	submitEmployeeForm,
@@ -34,6 +37,58 @@ function EmployeesPage({
 	const [departmentFilter, setDepartmentFilter] = useState("");
 	const [statusFilter, setStatusFilter] = useState("");
 	const [roleFilter, setRoleFilter] = useState("");
+
+	const permissionGroups = useMemo(() => {
+		return employeePermissions.reduce((groups, permission) => {
+			const groupName = permission.nhom_quyen || "Khác";
+			if (!groups[groupName]) {
+				groups[groupName] = [];
+			}
+			groups[groupName].push(permission);
+			return groups;
+		}, {});
+	}, [employeePermissions]);
+
+	const togglePermission = (permissionId) => {
+		const currentIds = employeeForm.quyen_ids || [];
+		const permissionKey = Number(permissionId);
+		const hasPermission = currentIds.map(Number).includes(permissionKey);
+		setEmployeeForm({
+			...employeeForm,
+			quyen_ids: hasPermission
+				? currentIds.filter((id) => Number(id) !== permissionKey)
+				: [...currentIds, permissionKey],
+		});
+	};
+
+	const renderPermissionGroups = () => (
+		<div className="form-group permission-group">
+			<label>Nhóm quyền</label>
+			{employeePermissionsLoading ? <p>Đang tải danh sách quyền...</p> : null}
+			{!employeePermissionsLoading && employeePermissions.length === 0 ? (
+				<p>Chưa có quyền trong bảng quyền.</p>
+			) : null}
+			<div className="permission-grid">
+				{Object.entries(permissionGroups).map(([groupName, permissions]) => (
+					<div key={groupName} className="permission-card">
+						<strong>{groupName}</strong>
+						{permissions.map((permission) => (
+							<label key={permission.id} className="permission-option">
+								<input
+									type="checkbox"
+									checked={(employeeForm.quyen_ids || [])
+										.map(Number)
+										.includes(Number(permission.id))}
+									onChange={() => togglePermission(permission.id)}
+								/>
+								<span>{permission.ten_quyen || permission.ma_quyen}</span>
+							</label>
+						))}
+					</div>
+				))}
+			</div>
+		</div>
+	);
 
 	const departmentMap = useMemo(() => {
 		return employeeDepartments.reduce((acc, department) => {
@@ -128,13 +183,16 @@ function EmployeesPage({
 			vai_tro: row.vai_tro || "Nhân viên",
 			ngay_vao_lam: row.ngay_vao_lam || "",
 			avatar_url: row.avatar_url || "",
+			quyen_ids: row.quyen_ids || [],
 		});
 		fetchEmployeeDepartments();
+		fetchEmployeePermissions();
 		setViewEmployee(row);
 	};
 	useEffect(() => {
 		fetchEmployees(1);
 		fetchEmployeeDepartments();
+		fetchEmployeePermissions();
 	}, []);
 
 	return (
@@ -364,6 +422,7 @@ function EmployeesPage({
 									<option value="Nhân viên">Nhân viên</option>
 								</select>
 							</div>
+							{renderPermissionGroups()}
 						</div>
 						{employeeDepartmentsLoading ? (
 							<p>Đang tải danh sách phòng ban...</p>
@@ -767,6 +826,7 @@ function EmployeesPage({
 									<option value="Nhân viên">Nhân viên</option>
 								</select>
 							</div>
+							{renderPermissionGroups()}
 							<div className="form-group">
 								<label>Avatar URL</label>
 								<input
@@ -806,3 +866,6 @@ function EmployeesPage({
 }
 
 export default EmployeesPage;
+
+
+

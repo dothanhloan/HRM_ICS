@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -20,6 +20,49 @@ def normalize_optional(value: Optional[object]) -> Optional[object]:
         return trimmed if trimmed else None
     return value
 
+def fetch_permission_ids(db: Session, nhanvien_ids: list[int]) -> dict[int, list[int]]:
+    if not nhanvien_ids:
+        return {}
+    rows = db.execute(
+        text(
+            """
+            SELECT nhanvien_id, quyen_id
+            FROM nhanvien_quyen
+            WHERE nhanvien_id IN :ids
+            ORDER BY quyen_id
+            """
+        ).bindparams(bindparam("ids", expanding=True)),
+        {"ids": nhanvien_ids},
+    ).mappings().all()
+    permission_map = {nhanvien_id: [] for nhanvien_id in nhanvien_ids}
+    for row in rows:
+        permission_map.setdefault(row["nhanvien_id"], []).append(row["quyen_id"])
+    return permission_map
+
+def sync_employee_permissions(db: Session, nhanvien_id: int, quyen_ids: Optional[list[int]]) -> None:
+    if quyen_ids is None:
+        return
+    unique_ids = sorted({int(quyen_id) for quyen_id in quyen_ids})
+    if unique_ids:
+        existing = db.execute(
+            text("SELECT id FROM quyen WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)),
+            {"ids": unique_ids},
+        ).scalars().all()
+        missing = set(unique_ids) - set(existing)
+        if missing:
+            raise HTTPException(status_code=400, detail="Invalid quyen_ids")
+    db.execute(text("DELETE FROM nhanvien_quyen WHERE nhanvien_id = :id"), {"id": nhanvien_id})
+    for quyen_id in unique_ids:
+        db.execute(
+            text(
+                """
+                INSERT INTO nhanvien_quyen (nhanvien_id, quyen_id)
+                VALUES (:nhanvien_id, :quyen_id)
+                """
+            ),
+            {"nhanvien_id": nhanvien_id, "quyen_id": quyen_id},
+        )
+
 
 class NhanVienCreate(BaseModel):
     ho_ten: str
@@ -35,6 +78,7 @@ class NhanVienCreate(BaseModel):
     vai_tro: Optional[str] = None
     ngay_vao_lam: Optional[str] = None
     avatar_url: Optional[str] = None
+    quyen_ids: Optional[list[int]] = None
 
 
 class NhanVienUpdate(BaseModel):
@@ -51,6 +95,7 @@ class NhanVienUpdate(BaseModel):
     vai_tro: Optional[str] = None
     ngay_vao_lam: Optional[str] = None
     avatar_url: Optional[str] = None
+    quyen_ids: Optional[list[int]] = None
 
 
 @router.get("/")
@@ -113,11 +158,15 @@ def list_nhanvien(
     )
 
     rows = db.execute(query, params).mappings().all()
+    items = [dict(row) for row in rows]
+    permission_map = fetch_permission_ids(db, [item["id"] for item in items])
+    for item in items:
+        item["quyen_ids"] = permission_map.get(item["id"], [])
     total = db.execute(total_query, params).scalar() or 0
     total_pages = (total + resolved_limit - 1) // resolved_limit if resolved_limit else 0
 
     return {
-        "data": [dict(row) for row in rows],
+        "data": items,
         "total": total,
         "page": page,
         "page_size": resolved_limit,
@@ -149,7 +198,7 @@ def create_nhanvien(payload: NhanVienCreate, db: Session = Depends(get_db)) -> d
         """
     )
 
-    params = payload.model_dump()
+    params = payload.model_dump(exclude={"quyen_ids"})
     params["ho_ten"] = params["ho_ten"].strip()
     params["email"] = params["email"].strip()
     params["mat_khau"] = params["mat_khau"].strip()
@@ -170,12 +219,14 @@ def create_nhanvien(payload: NhanVienCreate, db: Session = Depends(get_db)) -> d
         raise HTTPException(status_code=400, detail="Invalid gioi_tinh")
 
     db.execute(query, params)
+    nhanvien_id = db.execute(text("SELECT LAST_INSERT_ID()" )).scalar()
+    sync_employee_permissions(db, int(nhanvien_id), payload.quyen_ids)
     db.commit()
 
     row = db.execute(
         text(
             """
-            SELECT id, ho_ten, email, so_dien_thoai, phong_ban_id, chuc_vu, trang_thai_lam_viec
+            SELECT id, ho_ten, email, so_dien_thoai, phong_ban_id, chuc_vu, trang_thai_lam_viec, vai_tro
             FROM nhanvien
             WHERE email = :email
             """
@@ -183,7 +234,10 @@ def create_nhanvien(payload: NhanVienCreate, db: Session = Depends(get_db)) -> d
         {"email": params["email"]},
     ).mappings().first()
 
-    return {"data": dict(row) if row else None}
+    item = dict(row) if row else None
+    if item:
+        item["quyen_ids"] = fetch_permission_ids(db, [item["id"]]).get(item["id"], [])
+    return {"data": item}
 
 
 @router.put("/{nhanvien_id}")
@@ -211,13 +265,15 @@ def update_nhanvien(
     if actor.lower() == "employee":
         allowed_fields = {"ho_ten", "so_dien_thoai", "ngay_sinh", "gioi_tinh"}
 
-    data = {k: v for k, v in payload.model_dump().items() if v is not None and k in allowed_fields}
+    payload_data = payload.model_dump()
+    data = {k: v for k, v in payload_data.items() if v is not None and k in allowed_fields}
     for key in list(data.keys()):
         data[key] = normalize_optional(data[key])
         if data[key] is None:
             del data[key]
 
-    if not data:
+    can_sync_permissions = actor.lower() != "employee" and payload_data.get("quyen_ids") is not None
+    if not data and not can_sync_permissions:
         raise HTTPException(status_code=400, detail="No fields to update")
 
     if data.get("gioi_tinh") and data["gioi_tinh"] not in GIOI_TINH_ALLOWED:
@@ -231,15 +287,18 @@ def update_nhanvien(
         if exists:
             raise HTTPException(status_code=400, detail="Email already exists")
 
-    set_clause = ", ".join([f"{key} = :{key}" for key in data.keys()])
-    data["id"] = nhanvien_id
-    db.execute(text(f"UPDATE nhanvien SET {set_clause} WHERE id = :id"), data)
+    if data:
+        set_clause = ", ".join([f"{key} = :{key}" for key in data.keys()])
+        data["id"] = nhanvien_id
+        db.execute(text(f"UPDATE nhanvien SET {set_clause} WHERE id = :id"), data)
+    if can_sync_permissions:
+        sync_employee_permissions(db, nhanvien_id, payload.quyen_ids)
     db.commit()
 
     row = db.execute(
         text(
             """
-            SELECT id, ho_ten, email, so_dien_thoai, phong_ban_id, chuc_vu, trang_thai_lam_viec
+            SELECT id, ho_ten, email, so_dien_thoai, phong_ban_id, chuc_vu, trang_thai_lam_viec, vai_tro
             FROM nhanvien
             WHERE id = :id
             """
@@ -247,7 +306,10 @@ def update_nhanvien(
         {"id": nhanvien_id},
     ).mappings().first()
 
-    return {"data": dict(row) if row else None}
+    item = dict(row) if row else None
+    if item:
+        item["quyen_ids"] = fetch_permission_ids(db, [item["id"]]).get(item["id"], [])
+    return {"data": item}
 
 
 @router.delete("/{nhanvien_id}")

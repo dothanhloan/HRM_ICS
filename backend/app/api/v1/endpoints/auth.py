@@ -26,6 +26,26 @@ def serialize_user(row) -> dict:
             data[key] = str(data[key])
     return data
 
+def fetch_user_permissions(db: Session, user_id: int) -> dict:
+    rows = db.execute(
+        text(
+            """
+            SELECT q.id, q.ma_quyen, q.ten_quyen, q.nhom_quyen
+            FROM nhanvien_quyen nq
+            JOIN quyen q ON q.id = nq.quyen_id
+            WHERE nq.nhanvien_id = :user_id
+            ORDER BY q.nhom_quyen, q.ten_quyen
+            """
+        ),
+        {"user_id": user_id},
+    ).mappings().all()
+    permissions = [dict(row) for row in rows]
+    return {
+        "quyen_ids": [permission["id"] for permission in permissions],
+        "ma_quyen": [permission["ma_quyen"] for permission in permissions],
+        "permissions": permissions,
+    }
+
 
 @router.post("/login")
 def login(payload: LoginPayload, db: Session = Depends(get_db)) -> dict:
@@ -67,8 +87,11 @@ def login(payload: LoginPayload, db: Session = Depends(get_db)) -> dict:
     role = (result.get("vai_tro") or "").lower()
     home_route = "/admin" if "admin" in role else "/home"
 
+    user = serialize_user(result)
+    user.update(fetch_user_permissions(db, user["id"]))
+
     return {
-        "user": serialize_user(result),
+        "user": user,
         "home_route": home_route,
     }
 
@@ -103,7 +126,9 @@ def get_profile(user_id: int, db: Session = Depends(get_db)) -> dict:
     ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
-    return {"data": serialize_user(row)}
+    user = serialize_user(row)
+    user.update(fetch_user_permissions(db, user["id"]))
+    return {"data": user}
 
 
 @router.post("/change_password")
@@ -128,3 +153,4 @@ def change_password(payload: ChangePasswordPayload, db: Session = Depends(get_db
     )
     db.commit()
     return {"message": "Password changed successfully"}
+

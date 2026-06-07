@@ -61,6 +61,8 @@ function App() {
 	const [employeeEditingId, setEmployeeEditingId] = useState(null);
 	const [employeeDepartments, setEmployeeDepartments] = useState([]);
 	const [employeeDepartmentsLoading, setEmployeeDepartmentsLoading] = useState(false);
+	const [employeePermissions, setEmployeePermissions] = useState([]);
+	const [employeePermissionsLoading, setEmployeePermissionsLoading] = useState(false);
 	const [deleteTarget, setDeleteTarget] = useState(null);
 	const [projectRows, setProjectRows] = useState([]);
 	const [projectTotal, setProjectTotal] = useState(0);
@@ -163,6 +165,7 @@ function App() {
 		vai_tro: "Nhân viên",
 		ngay_vao_lam: "",
 		avatar_url: "",
+		quyen_ids: [],
 	});
 
 	const handleSubmit = async (event) => {
@@ -237,6 +240,7 @@ function App() {
 		setEmployeeFormOpen(false);
 		setEmployeeEditingId(null);
 		setEmployeeDepartments([]);
+		setEmployeePermissions([]);
 		setDeleteTarget(null);
 		setProjectRows([]);
 		setProjectTotal(0);
@@ -550,7 +554,7 @@ function App() {
 		setLeaveLoading(true);
 		setLeaveStatus({ type: "", message: "" });
 		try {
-			const isAdminUser = (user?.vai_tro || "").toLowerCase().includes("admin");
+			const isAdminUser = isAdmin || canManageLeave;
 			const nextPage = pageOverride ?? leavePage;
 			const params = new URLSearchParams({
 				page: String(nextPage),
@@ -699,7 +703,27 @@ function App() {
 			vai_tro: "Nhân viên",
 			ngay_vao_lam: "",
 			avatar_url: "",
+			quyen_ids: [],
 		});
+	};
+
+	const fetchEmployeePermissions = async (force = false) => {
+		if (!force && employeePermissions.length > 0) {
+			return;
+		}
+		setEmployeePermissionsLoading(true);
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/quyen?limit=500`);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai danh sach quyen");
+			}
+			setEmployeePermissions(data || []);
+		} catch (error) {
+			setEmployeeStatus({ type: "error", message: error.message });
+		} finally {
+			setEmployeePermissionsLoading(false);
+		}
 	};
 
 	const fetchEmployeeDepartments = async (force = false) => {
@@ -726,12 +750,14 @@ function App() {
 	const openCreateEmployee = () => {
 		resetEmployeeForm();
 		fetchEmployeeDepartments();
+		fetchEmployeePermissions();
 		setEmployeeFormOpen(true);
 	};
 
 	const openEditEmployee = (row) => {
 		setEmployeeEditingId(row.id);
 		fetchEmployeeDepartments();
+		fetchEmployeePermissions();
 		setEmployeeForm({
 			ho_ten: row.ho_ten || "",
 			email: row.email || "",
@@ -746,6 +772,7 @@ function App() {
 			vai_tro: row.vai_tro || "Nhân viên",
 			ngay_vao_lam: row.ngay_vao_lam || "",
 			avatar_url: row.avatar_url || "",
+			quyen_ids: row.quyen_ids || [],
 		});
 		setEmployeeFormOpen(true);
 	};
@@ -764,6 +791,7 @@ function App() {
 		try {
 			const payload = {
 				...employeeForm,
+				quyen_ids: (employeeForm.quyen_ids || []).map((quyenId) => Number(quyenId)),
 				phong_ban_id: employeeForm.phong_ban_id
 					? Number(employeeForm.phong_ban_id)
 					: null,
@@ -773,17 +801,25 @@ function App() {
 			};
 
 			if (employeeEditingId) {
-				await fetch(`${API_BASE}/api/v1/nhanvien/${employeeEditingId}?actor=admin`, {
+				const response = await fetch(`${API_BASE}/api/v1/nhanvien/${employeeEditingId}?actor=admin`, {
 					method: "PUT",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(payload),
 				});
+				const data = await response.json();
+				if (!response.ok) {
+					throw new Error(data.detail || "Khong the cap nhat nhan vien");
+				}
 			} else {
-				await fetch(`${API_BASE}/api/v1/nhanvien`, {
+				const response = await fetch(`${API_BASE}/api/v1/nhanvien`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(payload),
 				});
+				const data = await response.json();
+				if (!response.ok) {
+					throw new Error(data.detail || "Khong the them nhan vien");
+				}
 			}
 
 			setEmployeeFormOpen(false);
@@ -866,9 +902,7 @@ function App() {
 			}
 			params.set("page", String(nextPage));
 			params.set("page_size", String(projectPageSize));
-			const actor = (user?.vai_tro || "").toLowerCase().includes("admin")
-				? "admin"
-				: "employee";
+			const actor = canManageProjects ? "admin" : "employee";
 			params.set("actor", actor);
 			if (actor === "employee" && user?.id) {
 				params.set("nhan_vien_id", String(user.id));
@@ -911,9 +945,7 @@ function App() {
 			}
 			params.set("sort_by", taskSort);
 			
-			const actor = (user?.vai_tro || "").toLowerCase().includes("admin")
-				? "admin"
-				: "employee";
+			const actor = canManageTasks ? "admin" : "employee";
 			
 			// Nhân viên chỉ xem công việc của mình
 			if (actor === "employee" && user?.id) {
@@ -1155,9 +1187,7 @@ function App() {
 				page: "1",
 				page_size: "200",
 			});
-			const actor = (user?.vai_tro || "").toLowerCase().includes("admin")
-				? "admin"
-				: "employee";
+			const actor = canManageProjects ? "admin" : "employee";
 			params.set("actor", actor);
 			if (actor === "employee" && user?.id) {
 				params.set("nhan_vien_id", String(user.id));
@@ -1875,6 +1905,65 @@ function App() {
 
 	const isAdmin = (user?.vai_tro || "").toLowerCase().includes("admin");
 	const isManager = (user?.vai_tro || "").toLowerCase().includes("quản lý");
+	const normalizePermission = (value) =>
+		String(value || "")
+			.toLowerCase()
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "")
+			.replace(/d/g, "d");
+	const userPermissionText = [
+		...(user?.ma_quyen || []),
+		...(user?.permissions || []).flatMap((permission) => [
+			permission.ma_quyen,
+			permission.ten_quyen,
+			permission.nhom_quyen,
+		]),
+	]
+		.map(normalizePermission)
+		.join(" ");
+	const hasPermission = (aliases = []) =>
+		isAdmin || aliases.some((alias) => userPermissionText.includes(normalizePermission(alias)));
+	const canManageEmployees = hasPermission(["nhan_su", "nhanvien", "nhan vien", "employees"]);
+	const canManageDepartments = hasPermission(["phong_ban", "phong ban", "departments"]);
+	const canManageAttendance = hasPermission(["cham_cong", "cham cong", "attendance"]);
+	const canManageLeave = hasPermission(["nghi_phep", "nghi phep", "leave"]);
+	const canViewLeaveStats = canManageLeave || hasPermission(["thong_ke_phep", "leave_stats"]);
+	const canManageProjects = hasPermission(["du_an", "du an", "projects"]);
+	const canManageTasks = hasPermission(["cong_viec", "cong viec", "tasks"]);
+	const canUseKpi = hasPermission(["kpi"]);
+	const canUseSalary = hasPermission(["luong", "salary", "payroll"]);
+	const visibleMenuItems = [
+		{ label: "Dashboard", icon: "chart", to: "/dashboard" },
+		...(canManageEmployees ? [{ label: "Nhân sự", icon: "people", to: "/employees" }] : []),
+		{ label: "Dự án", icon: "project", to: "/projects" },
+		{ label: "Công việc", icon: "task", to: "/tasks" },
+		...(canManageDepartments ? [{ label: "Phòng ban", icon: "office", to: "/departments" }] : []),
+		canManageAttendance
+			? {
+					label: "Chấm công",
+					icon: "calendar",
+					to: "/attendance/manage",
+					children: [
+						{ label: "Quản lý chấm công", icon: "task", to: "/attendance/manage" },
+						{ label: "Chấm công", icon: "calendar", to: "/attendance" },
+					],
+			  }
+			: { label: "Chấm công", icon: "calendar", to: "/attendance" },
+		canManageLeave
+			? {
+					label: "Nghỉ phép",
+					icon: "leave",
+					to: "/leave/manage",
+					children: [
+						{ label: "Quản lý nghỉ phép", icon: "task", to: "/leave/manage" },
+						...(canViewLeaveStats ? [{ label: "Thống kê ngày phép", icon: "report", to: "/leave/stats" }] : []),
+						{ label: "Nghỉ phép", icon: "leave", to: "/leave" },
+					],
+			  }
+			: { label: "Nghỉ phép", icon: "leave", to: "/leave" },
+		...(canUseKpi ? [{ label: "Tính KPI", icon: "report", to: "/kpi-calculator" }] : []),
+		...(canUseSalary ? [{ label: "Tính lương", icon: "salary", to: "/salary-calculator" }] : []),
+	];
 
 	if (!user) {
 		return (
@@ -1904,7 +1993,7 @@ function App() {
 				element={
 					<AppLayout
 						user={user}
-						menuItems={isAdmin ? adminMenuItems : menuItems}
+						menuItems={visibleMenuItems}
 						iconMap={iconMap}
 						onLogout={handleLogout}
 					/>
@@ -1942,7 +2031,7 @@ function App() {
 				<Route
 					path="/attendance/manage"
 					element={
-						isAdmin ? (
+						canManageAttendance ? (
 							<AttendancePage
 								user={user}
 								isAdmin={true}
@@ -1990,7 +2079,7 @@ function App() {
 				<Route
 					path="/leave/manage"
 					element={
-						isAdmin ? (
+						canManageLeave ? (
 							<LeavePage
 								user={user}
 								isAdmin={true}
@@ -2019,7 +2108,7 @@ function App() {
 				<Route
 					path="/leave/stats"
 					element={
-						isAdmin ? (
+						canViewLeaveStats ? (
 							<LeaveStatsPage user={user} apiBase={API_BASE} />
 						) : (
 							<Navigate to="/leave" replace />
@@ -2030,7 +2119,7 @@ function App() {
 					path="/projects"
 					element={
 						<ProjectsPage
-							isAdmin={isAdmin}
+							isAdmin={canManageProjects}
 							projectRows={projectRows}
 							projectTotal={projectTotal}
 							projectQuery={projectQuery}
@@ -2076,7 +2165,7 @@ function App() {
 					element={
 						<TasksPage
 							user={user}
-							isAdmin={isAdmin}
+							isAdmin={canManageTasks}
 							taskRows={taskRows}
 							taskTotal={taskTotal}
 							taskQuery={taskQuery}
@@ -2135,7 +2224,7 @@ function App() {
 				<Route
 					path="/departments"
 					element={
-						isAdmin ? (
+						canManageDepartments ? (
 							<DepartmentsPage
 								departmentRows={departmentRows}
 								departmentTotal={departmentTotal}
@@ -2171,16 +2260,16 @@ function App() {
 				/>
 				<Route
 					path="/kpi-calculator"
-					element={<KpiCalculatorPage user={user} isAdmin={isAdmin} isManager={isManager} />}
+					element={canUseKpi ? <KpiCalculatorPage user={user} isAdmin={isAdmin} isManager={isManager} /> : <Navigate to="/dashboard" replace />}
 				/>
 				<Route
 					path="/salary-calculator"
-					element={<SalaryCalculatorPage user={user} isAdmin={isAdmin} isManager={isManager} />}
+					element={canUseSalary ? <SalaryCalculatorPage user={user} isAdmin={canUseSalary} isManager={isManager} /> : <Navigate to="/dashboard" replace />}
 				/>
 				<Route
 					path="/employees"
 					element={
-						isAdmin ? (
+						canManageEmployees ? (
 							<EmployeesPage
 								employeeRows={employeeRows}
 								employeeTotal={employeeTotal}
@@ -2195,6 +2284,8 @@ function App() {
 								employeeForm={employeeForm}
 								employeeDepartments={employeeDepartments}
 								employeeDepartmentsLoading={employeeDepartmentsLoading}
+								employeePermissions={employeePermissions}
+								employeePermissionsLoading={employeePermissionsLoading}
 								deleteTarget={deleteTarget}
 								setEmployeeQuery={setEmployeeQuery}
 								setEmployeeFormOpen={setEmployeeFormOpen}
@@ -2204,6 +2295,7 @@ function App() {
 								resetEmployeeForm={resetEmployeeForm}
 								fetchEmployees={fetchEmployees}
 								fetchEmployeeDepartments={fetchEmployeeDepartments}
+								fetchEmployeePermissions={fetchEmployeePermissions}
 								openCreateEmployee={openCreateEmployee}
 								openEditEmployee={openEditEmployee}
 								submitEmployeeForm={submitEmployeeForm}
@@ -2224,3 +2316,10 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+
+
