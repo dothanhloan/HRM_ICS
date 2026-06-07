@@ -92,6 +92,7 @@ def list_nhanvien(
           ngay_sinh,
           phong_ban_id,
           chuc_vu,
+          luong_co_ban,
           ngay_vao_lam,
           trang_thai_lam_viec,
           vai_tro,

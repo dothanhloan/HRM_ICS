@@ -85,8 +85,39 @@ function KpiCalculatorPage({ user, isAdmin, isManager }) {
 		}
 	};
 
+	const calculateMyKpi = async () => {
+		setActionLoading(true);
+		setStatus({ type: "", message: "" });
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/kpi_tinh_toan/tinh_toan`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					actor_id: user.id,
+					actor_role: actorRole,
+					target_nhan_vien_id: user.id,
+					thang: Number(month),
+					nam: Number(year),
+					luu_ket_qua: true,
+					ghi_chu: "User-generated KPI period",
+				}),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tinh KPI ca nhan");
+			}
+			setStatus({ type: "success", message: "Da tinh va luu KPI ca nhan." });
+			await fetchData();
+		} catch (error) {
+			setStatus({ type: "error", message: error.message });
+		} finally {
+			setActionLoading(false);
+		}
+	};
+
 	const totalPages = useMemo(() => Math.max(Math.ceil(total / pageSize), 1), [total, pageSize]);
 	const pageLabel = `${String(month).padStart(2, "0")}/${year}`;
+	const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`;
 
 	const visibleTitle = isAdmin
 		? "KPI toàn công ty"
@@ -146,7 +177,11 @@ function KpiCalculatorPage({ user, isAdmin, isManager }) {
 								<button type="button" onClick={runMonthlyKpi} disabled={actionLoading}>
 									{actionLoading ? "Đang chạy KPI..." : "Chạy KPI tháng"}
 								</button>
-							) : null}
+							) : (
+								<button type="button" onClick={calculateMyKpi} disabled={actionLoading}>
+									{actionLoading ? "Dang tinh KPI..." : "Tinh KPI ca nhan"}
+								</button>
+							)}
 						</div>
 					</div>
 				</div>
@@ -178,9 +213,12 @@ function KpiCalculatorPage({ user, isAdmin, isManager }) {
 									<th>Phòng ban</th>
 									<th>Chức vụ</th>
 									<th>Kỳ</th>
+									<th>Công việc</th>
+									<th>Hoàn thành</th>
+									<th>Đúng hạn</th>
+									<th>Khối lượng</th>
 									<th>Điểm KPI</th>
 									<th>Hệ số</th>
-									<th>Chi tiết</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -190,13 +228,15 @@ function KpiCalculatorPage({ user, isAdmin, isManager }) {
 										<td>{row.ten_phong || "-"}</td>
 										<td>{row.chuc_vu || "-"}</td>
 										<td>{String(row.thang).padStart(2, "0")}/{row.nam}</td>
+										<td>
+											{row.tong_task_hoan_thanh || 0}/{row.tong_task_duoc_giao || 0}
+											<small> TB phòng ban: {Number(row.trung_binh_task_team || 0).toFixed(2)}</small>
+										</td>
+										<td>{formatPercent(row.ty_le_hoan_thanh)}</td>
+										<td>{formatPercent(row.ty_le_dung_han)}</td>
+										<td>{formatPercent(row.diem_khoi_luong)}</td>
 										<td>{Number(row.diem_kpi || 0).toFixed(2)}</td>
 										<td>{Number(row.he_so_kpi || 0).toFixed(2)}</td>
-										<td>
-											<small>
-												Completed: {row.chi_tieu || "-"}
-											</small>
-										</td>
 									</tr>
 								))}
 							</tbody>
@@ -216,3 +256,4 @@ function KpiCalculatorPage({ user, isAdmin, isManager }) {
 }
 
 export default KpiCalculatorPage;
+

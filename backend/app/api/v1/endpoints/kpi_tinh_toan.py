@@ -21,10 +21,18 @@ class KpiTinhToanPayload(BaseModel):
 	luu_ket_qua: bool = True
 	ghi_chu: Optional[str] = None
 
+class KpiChayThangPayload(BaseModel):
+	actor_id: int = Field(gt=0)
+	actor_role: str = "Nhan vien"
+	thang: int = Field(ge=1, le=12)
+	nam: int = Field(ge=2000, le=2100)
+
 
 @router.post("/tinh_toan")
 def tinh_toan_kpi(payload: KpiTinhToanPayload, db: Session = Depends(get_db)) -> dict:
 	requested_employee_id = payload.target_nhan_vien_id or payload.nhan_vien_id or payload.actor_id
+	if "admin" not in (payload.actor_role or "").strip().lower():
+		requested_employee_id = payload.actor_id
 	try:
 		result = calculate_kpi(
 			db=db,
@@ -67,13 +75,16 @@ def danh_sach_kpi(
 
 @router.post("/chay_thang")
 def chay_kpi_thang(
-    actor_id: int,
-    actor_role: str = "Nhân viên",
-    thang: int = 1,
-    nam: int = 2026,
+    payload: KpiChayThangPayload,
     db: Session = Depends(get_db),
 ) -> dict:
     try:
-        return run_kpi_period(db=db, actor_id=actor_id, actor_role=actor_role, thang=thang, nam=nam)
+        return run_kpi_period(
+            db=db,
+            actor_id=payload.actor_id,
+            actor_role=payload.actor_role,
+            thang=payload.thang,
+            nam=payload.nam,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

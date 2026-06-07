@@ -10,9 +10,6 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.api.v1.endpoints.crud_factory import create_crud_router
-from app.models.generated import CongViec
-
 router = APIRouter(prefix="/cong_viec", tags=["cong_viec"])
 UPLOAD_ROOT = Path(__file__).resolve().parents[4] / "uploads" / "cong_viec"
 
@@ -29,6 +26,7 @@ class CongViecCreate(BaseModel):
 	nguoi_giao_id: int
 	nguoi_nhan_ids: list[int]
 	nguoi_theo_doi_ids: Optional[list[int]] = None
+	actor_id: Optional[int] = None
 
 
 class CongViecUpdate(BaseModel):
@@ -44,11 +42,18 @@ class CongViecUpdate(BaseModel):
 	nguoi_nhan_ids: Optional[list[int]] = None
 	nguoi_theo_doi_ids: Optional[list[int]] = None
 	nguoi_thay_doi_id: Optional[int] = None
+	actor_id: Optional[int] = None
 
 
 class CongViecProgressUpdate(BaseModel):
 	trang_thai: str
 	phan_tram: int
+	nhan_vien_id: Optional[int] = None
+
+class CongViecApproval(BaseModel):
+	nguoi_duyet_id: int
+	action: str
+	ly_do_duyet: Optional[str] = None
 
 
 def _normalize_task_value(value):
@@ -57,6 +62,121 @@ def _normalize_task_value(value):
 	if isinstance(value, date):
 		return value.isoformat()
 	return str(value)
+
+
+def _is_completed_status(status: Optional[str]) -> bool:
+	return (status or "").strip().lower() in {"\u0111\u00e3 ho\u00e0n th\u00e0nh", "da hoan thanh"}
+
+def _is_admin(nhan_vien_id: Optional[int], db: Session) -> bool:
+	if nhan_vien_id is None:
+		return False
+	row = db.execute(
+		text("SELECT vai_tro FROM nhanvien WHERE id = :id"),
+		{"id": nhan_vien_id},
+	).mappings().first()
+	return bool(row and "admin" in (row.get("vai_tro") or "").lower())
+
+def _get_task_access(cong_viec_id: int, nhan_vien_id: Optional[int], db: Session):
+	if nhan_vien_id is None:
+		return None
+	return db.execute(
+		text(
+			"""
+			SELECT
+				cv.id,
+				cv.nguoi_giao_id,
+				cv.du_an_id,
+				da.lead_id,
+				EXISTS (
+					SELECT 1
+					FROM cong_viec_nguoi_nhan cvnn
+					WHERE cvnn.cong_viec_id = cv.id
+					  AND cvnn.nhan_vien_id = :nhan_vien_id
+				) AS is_assignee
+			FROM cong_viec cv
+			JOIN du_an da ON da.id = cv.du_an_id
+			WHERE cv.id = :cong_viec_id
+			"""
+		),
+		{"cong_viec_id": cong_viec_id, "nhan_vien_id": nhan_vien_id},
+	).mappings().first()
+
+def _assert_project_leader(du_an_id: int, actor_id: Optional[int], db: Session) -> None:
+	project = db.execute(
+		text("SELECT id, lead_id FROM du_an WHERE id = :id"),
+		{"id": du_an_id},
+	).mappings().first()
+	if not project:
+		raise HTTPException(status_code=400, detail="Du an not found")
+	if int(project["lead_id"] or 0) != int(actor_id or 0):
+		raise HTTPException(status_code=403, detail="Chi leader du an moi duoc giao viec")
+
+def _assert_task_leader_or_admin(cong_viec_id: int, actor_id: Optional[int], db: Session) -> None:
+	access = _get_task_access(cong_viec_id, actor_id, db)
+	if not access:
+		raise HTTPException(status_code=404, detail="Task not found")
+	if not _is_admin(actor_id, db) and int(access["lead_id"] or 0) != int(actor_id or 0):
+		raise HTTPException(status_code=403, detail="Chi leader du an moi duoc duyet hoac quan ly cong viec")
+
+def _assert_task_admin(cong_viec_id: int, actor_id: Optional[int], db: Session) -> None:
+	access = _get_task_access(cong_viec_id, actor_id, db)
+	if not access:
+		raise HTTPException(status_code=404, detail="Task not found")
+	if not _is_admin(actor_id, db):
+		raise HTTPException(status_code=403, detail="Chi admin moi duoc duyet hoac tu choi cong viec")
+
+def _assert_task_pending_approval(cong_viec_id: int, db: Session) -> None:
+	progress = db.execute(
+		text(
+			f"""
+			SELECT
+				COUNT(*) AS total_steps,
+				SUM(CASE WHEN {TASK_STEP_COMPLETED_SQL} THEN 1 ELSE 0 END) AS completed_steps
+			FROM cong_viec_quy_trinh cqt
+			WHERE cqt.cong_viec_id = :cong_viec_id
+			"""
+		),
+		{"cong_viec_id": cong_viec_id},
+	).mappings().first()
+	total_steps = int(progress["total_steps"] or 0) if progress else 0
+	completed_steps = int(progress["completed_steps"] or 0) if progress else 0
+	if total_steps <= 0 or completed_steps != total_steps:
+		raise HTTPException(status_code=400, detail="Chi duoc duyet cong viec khi tat ca buoc con da hoan thanh")
+
+def _assert_task_assignee(cong_viec_id: int, actor_id: Optional[int], db: Session) -> None:
+	access = _get_task_access(cong_viec_id, actor_id, db)
+	if not access:
+		raise HTTPException(status_code=404, detail="Task not found")
+	if not access["is_assignee"]:
+		raise HTTPException(status_code=403, detail="Chi nguoi duoc giao moi duoc cap nhat tien do")
+
+TASK_STEP_COMPLETED_SQL = """
+	LOWER(COALESCE(cqt.trang_thai, '')) LIKE '%ho\u00e0n th\u00e0nh%'
+	OR LOWER(COALESCE(cqt.trang_thai, '')) LIKE '%hoÃ n thÃ nh%'
+	OR LOWER(COALESCE(cqt.trang_thai, '')) LIKE '%ho?n th?nh%'
+	OR LOWER(COALESCE(cqt.trang_thai, '')) IN ('da hoan thanh', 'completed', 'done')
+"""
+
+TASK_STEP_IN_PROGRESS_SQL = """
+	LOWER(COALESCE(cqt.trang_thai, '')) LIKE '%\u0111ang%'
+	OR LOWER(COALESCE(cqt.trang_thai, '')) LIKE '%dang%'
+	OR LOWER(COALESCE(cqt.trang_thai, '')) IN ('in_progress', 'doing')
+"""
+
+TASK_DISPLAY_STATUS_SQL = """
+	CASE
+		WHEN LOWER(COALESCE(cv.trang_thai_duyet, '')) IN ('\u0111\u00e3 duy\u1ec7t', 'da duyet', 'approved') THEN '\u0110\u00e3 ho\u00e0n th\u00e0nh'
+		WHEN LOWER(COALESCE(cv.trang_thai_duyet, '')) IN ('t\u1eeb ch\u1ed1i', 'tu choi', 'rejected') THEN '\u0110ang th\u1ef1c hi\u1ec7n'
+		WHEN cv.han_hoan_thanh IS NOT NULL AND cv.han_hoan_thanh < CURDATE() THEN 'Tr\u1ec5 h\u1ea1n'
+		WHEN COALESCE(qt.tong_buoc, 0) = 0 THEN 'Ch\u01b0a b\u1eaft \u0111\u1ea7u'
+		WHEN COALESCE(qt.so_buoc_hoan_thanh, 0) = qt.tong_buoc THEN 'Ch\u1edd duy\u1ec7t'
+		WHEN COALESCE(qt.so_buoc_hoan_thanh, 0) > 0 OR COALESCE(qt.so_buoc_dang_thuc_hien, 0) > 0 THEN '\u0110ang th\u1ef1c hi\u1ec7n'
+		WHEN LOWER(COALESCE(cv.trang_thai, '')) LIKE '%\u0111ang%'
+		  OR LOWER(COALESCE(cv.trang_thai, '')) LIKE '%dang%'
+		  THEN '\u0110ang th\u1ef1c hi\u1ec7n'
+		ELSE 'Ch\u01b0a b\u1eaft \u0111\u1ea7u'
+	END
+"""
 
 
 def _unique_int_list(values):
@@ -254,6 +374,7 @@ async def upload_task_attachment(
 def list_cong_viec(
 	q: Optional[str] = None,
 	trang_thai: Optional[str] = None,
+	du_an_id: Optional[int] = None,
 	sort_by: str = "deadline",
 	scope: str = "all",
 	nhan_vien_id: Optional[int] = None,
@@ -276,13 +397,16 @@ def list_cong_viec(
 	if q:
 		conditions.append("(cv.ten_cong_viec LIKE :q OR da.ten_du_an LIKE :q)")
 		params["q"] = f"%{q}%"
+	if du_an_id:
+		conditions.append("cv.du_an_id = :du_an_id")
+		params["du_an_id"] = du_an_id
 	if trang_thai:
-		conditions.append("cv.trang_thai = :trang_thai")
+		conditions.append(f"({TASK_DISPLAY_STATUS_SQL}) = :trang_thai")
 		params["trang_thai"] = trang_thai
 
 	order_by = "cv.han_hoan_thanh IS NULL, cv.han_hoan_thanh ASC"
 	if (sort_by or "").lower() == "status":
-		order_by = "cv.trang_thai ASC, cv.han_hoan_thanh IS NULL, cv.han_hoan_thanh ASC"
+		order_by = "FIELD(trang_thai_hien_thi, 'Trễ hạn', 'Chờ duyệt', 'Đang thực hiện', 'Chưa bắt đầu', 'Đã hoàn thành'), MAX(cv.han_hoan_thanh) IS NULL, MAX(cv.han_hoan_thanh) ASC"
 
 	where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -299,6 +423,16 @@ def list_cong_viec(
 			MAX(cv.han_hoan_thanh) AS han_hoan_thanh,
 			MAX(cv.muc_do_uu_tien) AS muc_do_uu_tien,
 			MAX(cv.trang_thai) AS trang_thai,
+			MAX(COALESCE(qt.tong_buoc, 0)) AS tong_buoc,
+			MAX(COALESCE(qt.so_buoc_hoan_thanh, 0)) AS so_buoc_hoan_thanh,
+			MAX(COALESCE(qt.so_buoc_dang_thuc_hien, 0)) AS so_buoc_dang_thuc_hien,
+			MAX(
+				CASE
+					WHEN COALESCE(qt.tong_buoc, 0) = 0 THEN 0
+					ELSE ROUND(qt.so_buoc_hoan_thanh * 100 / qt.tong_buoc)
+				END
+			) AS tien_do,
+			MAX({TASK_DISPLAY_STATUS_SQL}) AS trang_thai_hien_thi,
 			MAX(cv.trang_thai_duyet) AS trang_thai_duyet,
 			MAX(cv.tai_lieu_cv) AS tai_lieu_cv,
 			MAX(cv.nguoi_giao_id) AS nguoi_giao_id,
@@ -310,6 +444,15 @@ def list_cong_viec(
 		LEFT JOIN nhanvien nvg ON nvg.id = cv.nguoi_giao_id
 		LEFT JOIN cong_viec_nguoi_nhan cvnn ON cvnn.cong_viec_id = cv.id
 		LEFT JOIN nhanvien nvnn ON nvnn.id = cvnn.nhan_vien_id
+		LEFT JOIN (
+			SELECT
+				cqt.cong_viec_id,
+				COUNT(*) AS tong_buoc,
+				SUM(CASE WHEN {TASK_STEP_COMPLETED_SQL} THEN 1 ELSE 0 END) AS so_buoc_hoan_thanh,
+				SUM(CASE WHEN {TASK_STEP_IN_PROGRESS_SQL} THEN 1 ELSE 0 END) AS so_buoc_dang_thuc_hien
+			FROM cong_viec_quy_trinh cqt
+			GROUP BY cqt.cong_viec_id
+		) qt ON qt.cong_viec_id = cv.id
 		{where_sql}
 		GROUP BY cv.id, cv.ten_cong_viec
 		ORDER BY {order_by}
@@ -323,6 +466,15 @@ def list_cong_viec(
 		FROM cong_viec cv
 		LEFT JOIN du_an da ON da.id = cv.du_an_id
 		LEFT JOIN cong_viec_nguoi_nhan cvnn ON cvnn.cong_viec_id = cv.id
+		LEFT JOIN (
+			SELECT
+				cqt.cong_viec_id,
+				COUNT(*) AS tong_buoc,
+				SUM(CASE WHEN {TASK_STEP_COMPLETED_SQL} THEN 1 ELSE 0 END) AS so_buoc_hoan_thanh,
+				SUM(CASE WHEN {TASK_STEP_IN_PROGRESS_SQL} THEN 1 ELSE 0 END) AS so_buoc_dang_thuc_hien
+			FROM cong_viec_quy_trinh cqt
+			GROUP BY cqt.cong_viec_id
+		) qt ON qt.cong_viec_id = cv.id
 		{where_sql}
 		"""
 	)
@@ -358,7 +510,7 @@ def update_cong_viec(
 		text(
 			"""
 			SELECT du_an_id, ten_cong_viec, mo_ta, ngay_bat_dau, han_hoan_thanh,
-				muc_do_uu_tien, trang_thai, tai_lieu_cv, nguoi_giao_id
+				muc_do_uu_tien, trang_thai, tai_lieu_cv, nguoi_giao_id, ngay_hoan_thanh
 			FROM cong_viec WHERE id = :id
 			"""
 		),
@@ -366,6 +518,10 @@ def update_cong_viec(
 	).mappings().first()
 	if not current_row:
 		raise HTTPException(status_code=404, detail="Not found")
+	actor_id = payload.actor_id or payload.nguoi_thay_doi_id
+	if actor_id is None:
+		raise HTTPException(status_code=400, detail="Missing actor_id")
+	_assert_task_leader_or_admin(cong_viec_id, actor_id, db)
 
 	current_member_ids = [
 		int(row["nhan_vien_id"])
@@ -392,8 +548,14 @@ def update_cong_viec(
 		"trang_thai": payload.trang_thai if payload.trang_thai is not None else current_row["trang_thai"],
 		"tai_lieu_cv": payload.tai_lieu_cv if payload.tai_lieu_cv is not None else current_row["tai_lieu_cv"],
 		"nguoi_giao_id": payload.nguoi_giao_id if payload.nguoi_giao_id is not None else current_row["nguoi_giao_id"],
+		"ngay_hoan_thanh": current_row["ngay_hoan_thanh"],
 		"id": cong_viec_id,
 	}
+	if _is_completed_status(update_values["trang_thai"]):
+		update_values["ngay_hoan_thanh"] = current_row["ngay_hoan_thanh"] or date.today()
+	elif payload.trang_thai is not None:
+		update_values["ngay_hoan_thanh"] = None
+
 
 	if update_values["ngay_bat_dau"] is not None:
 		try:
@@ -423,6 +585,7 @@ def update_cong_viec(
 				han_hoan_thanh = :han_hoan_thanh,
 				muc_do_uu_tien = :muc_do_uu_tien,
 				trang_thai = :trang_thai,
+				ngay_hoan_thanh = :ngay_hoan_thanh,
 				tai_lieu_cv = :tai_lieu_cv,
 				nguoi_giao_id = :nguoi_giao_id
 			WHERE id = :id
@@ -496,6 +659,13 @@ def create_cong_viec(payload: CongViecCreate, db: Session = Depends(get_db)) -> 
 	if not project:
 		raise HTTPException(status_code=400, detail="Du an not found")
 
+	if payload.actor_id is None:
+		raise HTTPException(status_code=400, detail="Missing actor_id")
+	actor_id = payload.actor_id
+	_assert_project_leader(int(payload.du_an_id), actor_id, db)
+	if int(payload.nguoi_giao_id) != int(actor_id):
+		raise HTTPException(status_code=403, detail="Nguoi giao phai la leader dang thao tac")
+
 	creator_exists = db.execute(
 		text("SELECT COUNT(*) FROM nhanvien WHERE id = :id"),
 		{"id": payload.nguoi_giao_id},
@@ -518,10 +688,10 @@ def create_cong_viec(payload: CongViecCreate, db: Session = Depends(get_db)) -> 
 		"""
 		INSERT INTO cong_viec (
 			du_an_id, ten_cong_viec, mo_ta, han_hoan_thanh, muc_do_uu_tien,
-			nguoi_giao_id, trang_thai, tai_lieu_cv, ngay_bat_dau
+			nguoi_giao_id, trang_thai, trang_thai_duyet, tai_lieu_cv, ngay_bat_dau
 		) VALUES (
 			:du_an_id, :ten_cong_viec, :mo_ta, :han_hoan_thanh, :muc_do_uu_tien,
-			:nguoi_giao_id, :trang_thai, :tai_lieu_cv, :ngay_bat_dau
+			:nguoi_giao_id, :trang_thai, :trang_thai_duyet, :tai_lieu_cv, :ngay_bat_dau
 		)
 		"""
 	)
@@ -531,10 +701,12 @@ def create_cong_viec(payload: CongViecCreate, db: Session = Depends(get_db)) -> 
 	params["mo_ta"] = params["mo_ta"].strip()
 	params["trang_thai"] = params.get("trang_thai") or "Chưa bắt đầu"
 
+	params["trang_thai_duyet"] = "Ch\u1edd duy\u1ec7t" if _is_completed_status(params["trang_thai"]) else "Ch\u01b0a duy\u1ec7t"
+
 	db.execute(insert_query, params)
 	cong_viec_id = db.execute(text("SELECT LAST_INSERT_ID()"), {}).scalar()
 
-	if all_members:
+	if assignees:
 		db.execute(
 			text(
 				"""
@@ -544,9 +716,11 @@ def create_cong_viec(payload: CongViecCreate, db: Session = Depends(get_db)) -> 
 			),
 			[
 				{"cong_viec_id": cong_viec_id, "nhan_vien_id": member_id}
-				for member_id in all_members
+				for member_id in assignees
 			],
 		)
+
+
 
 	db.commit()
 	return {"id": cong_viec_id}
@@ -568,17 +742,26 @@ def update_tien_do(
 		raise HTTPException(status_code=400, detail="Invalid trang_thai")
 	if payload.phan_tram < 0 or payload.phan_tram > 100:
 		raise HTTPException(status_code=400, detail="Invalid phan_tram")
+	_assert_task_assignee(cong_viec_id, payload.nhan_vien_id, db)
 
-	exists = db.execute(
-		text("SELECT COUNT(*) FROM cong_viec WHERE id = :id"),
-		{"id": cong_viec_id},
-	).scalar()
-	if not exists:
-		raise HTTPException(status_code=404, detail="Not found")
-
+	is_completed_request = _is_completed_status(payload.trang_thai) or payload.phan_tram == 100
+	next_status = "\u0110ang th\u1ef1c hi\u1ec7n" if is_completed_request else payload.trang_thai
+	next_approval_status = "Ch\u1edd duy\u1ec7t" if is_completed_request else "Ch\u01b0a duy\u1ec7t"
 	db.execute(
-		text("UPDATE cong_viec SET trang_thai = :trang_thai WHERE id = :id"),
-		{"id": cong_viec_id, "trang_thai": payload.trang_thai},
+		text(
+			"""
+			UPDATE cong_viec
+			SET trang_thai = :trang_thai,
+				trang_thai_duyet = :trang_thai_duyet,
+				ngay_hoan_thanh = NULL
+			WHERE id = :id
+			"""
+		),
+		{
+			"id": cong_viec_id,
+			"trang_thai": next_status,
+			"trang_thai_duyet": next_approval_status,
+		},
 	)
 	db.execute(
 		text(
@@ -593,5 +776,73 @@ def update_tien_do(
 	return {"status": "ok"}
 
 
-crud_router = create_crud_router(CongViec, prefix="", tags=["cong_viec"])
-router.include_router(crud_router)
+@router.post("/{cong_viec_id}/duyet")
+def approve_cong_viec(
+	cong_viec_id: int,
+	payload: CongViecApproval,
+	db: Session = Depends(get_db),
+) -> dict:
+	_assert_task_admin(cong_viec_id, payload.nguoi_duyet_id, db)
+	_assert_task_pending_approval(cong_viec_id, db)
+	action = (payload.action or "").strip().lower()
+	if action in {"duyet", "approve", "approved"}:
+		db.execute(
+			text(
+				"""
+				UPDATE cong_viec
+				SET trang_thai_duyet = :trang_thai_duyet,
+					trang_thai = :trang_thai,
+					ly_do_duyet = :ly_do_duyet,
+					ngay_hoan_thanh = COALESCE(ngay_hoan_thanh, :ngay_hoan_thanh)
+				WHERE id = :id
+				"""
+			),
+			{
+				"id": cong_viec_id,
+				"trang_thai_duyet": "\u0110\u00e3 duy\u1ec7t",
+				"trang_thai": "\u0110\u00e3 ho\u00e0n th\u00e0nh",
+				"ly_do_duyet": (payload.ly_do_duyet or "").strip() or None,
+				"ngay_hoan_thanh": date.today(),
+			},
+		)
+		history_message = "Leader duyet hoan thanh cong viec"
+	elif action in {"tu_choi", "reject", "rejected"}:
+		db.execute(
+			text(
+				"""
+				UPDATE cong_viec
+				SET trang_thai_duyet = :trang_thai_duyet,
+					trang_thai = :trang_thai,
+					ly_do_duyet = :ly_do_duyet,
+					ngay_hoan_thanh = NULL
+				WHERE id = :id
+				"""
+			),
+			{
+				"id": cong_viec_id,
+				"trang_thai_duyet": "T\u1eeb ch\u1ed1i",
+				"trang_thai": "\u0110ang th\u1ef1c hi\u1ec7n",
+				"ly_do_duyet": (payload.ly_do_duyet or "").strip() or None,
+			},
+		)
+		history_message = "Leader tu choi hoan thanh cong viec"
+	else:
+		raise HTTPException(status_code=400, detail="Invalid approval action")
+
+	db.execute(
+		text(
+			"""
+			INSERT INTO cong_viec_lich_su (cong_viec_id, nguoi_thay_doi_id, mo_ta_thay_doi)
+			VALUES (:cong_viec_id, :nguoi_thay_doi_id, :mo_ta_thay_doi)
+			"""
+		),
+		{
+			"cong_viec_id": cong_viec_id,
+			"nguoi_thay_doi_id": payload.nguoi_duyet_id,
+			"mo_ta_thay_doi": history_message,
+		},
+	)
+	db.commit()
+	return {"status": "ok"}
+
+

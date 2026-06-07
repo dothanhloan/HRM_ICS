@@ -81,7 +81,20 @@ def list_du_an(
 	if actor_value == "employee":
 		if nhan_vien_id is None:
 			raise HTTPException(status_code=400, detail="Missing nhan_vien_id")
-		conditions.append("d.lead_id = :nhan_vien_id")
+		conditions.append(
+			"""
+			(
+				d.lead_id = :nhan_vien_id
+				OR EXISTS (
+					SELECT 1
+					FROM cong_viec cv
+					JOIN cong_viec_nguoi_nhan cvnn ON cvnn.cong_viec_id = cv.id
+					WHERE cv.du_an_id = d.id
+					  AND cvnn.nhan_vien_id = :nhan_vien_id
+				)
+			)
+			"""
+		)
 		params["nhan_vien_id"] = nhan_vien_id
 
 	where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""

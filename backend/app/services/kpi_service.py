@@ -70,6 +70,16 @@ def load_kpi_weights(db: Session) -> KpiWeights:
     )
 
 
+def kpi_score_to_level(score: float) -> str:
+    if score >= 90:
+        return "XUAT_SAC"
+    if score >= 80:
+        return "DAT_TOT"
+    if score >= 70:
+        return "DAT"
+    return "CAN_CAI_THIEN"
+
+
 def _is_approved_late_explanation(status: Optional[str]) -> bool:
     value = (status or "").strip().lower()
     approved_markers = ["duyet giai trinh", "được duyệt", "da duyet", "đã duyệt"]
@@ -147,8 +157,8 @@ def calculate_kpi(db: Session, actor_id: int, actor_role: str, thang: int, nam: 
             JOIN cong_viec cv ON cv.id = cvnn.cong_viec_id
             WHERE cvnn.nhan_vien_id = :nhan_vien_id
               AND cv.trang_thai IN ('Đã hoàn thành', 'Da hoan thanh')
-              AND cv.ngay_hoan_thanh >= :start_date
-              AND cv.ngay_hoan_thanh < :end_date
+              AND COALESCE(cv.ngay_hoan_thanh, cv.han_hoan_thanh, cv.ngay_bat_dau) >= :start_date
+              AND COALESCE(cv.ngay_hoan_thanh, cv.han_hoan_thanh, cv.ngay_bat_dau) < :end_date
             """
         ),
         {"nhan_vien_id": employee_id, "start_date": start_date, "end_date": end_date},
@@ -162,11 +172,10 @@ def calculate_kpi(db: Session, actor_id: int, actor_role: str, thang: int, nam: 
             JOIN cong_viec cv ON cv.id = cvnn.cong_viec_id
             WHERE cvnn.nhan_vien_id = :nhan_vien_id
               AND cv.trang_thai IN ('Đã hoàn thành', 'Da hoan thanh')
-              AND cv.ngay_hoan_thanh IS NOT NULL
               AND cv.han_hoan_thanh IS NOT NULL
-              AND cv.ngay_hoan_thanh <= cv.han_hoan_thanh
-              AND cv.ngay_hoan_thanh >= :start_date
-              AND cv.ngay_hoan_thanh < :end_date
+              AND COALESCE(cv.ngay_hoan_thanh, cv.han_hoan_thanh) <= cv.han_hoan_thanh
+              AND COALESCE(cv.ngay_hoan_thanh, cv.han_hoan_thanh, cv.ngay_bat_dau) >= :start_date
+              AND COALESCE(cv.ngay_hoan_thanh, cv.han_hoan_thanh, cv.ngay_bat_dau) < :end_date
             """
         ),
         {"nhan_vien_id": employee_id, "start_date": start_date, "end_date": end_date},
@@ -216,10 +225,20 @@ def calculate_kpi(db: Session, actor_id: int, actor_role: str, thang: int, nam: 
     payload = {
         "nhan_vien_id": employee_id,
         "nhan_vien_ten": employee.get("ho_ten"),
+        "phong_ban_id": employee.get("phong_ban_id"),
         "thang": thang,
         "nam": nam,
+        "tong_task_duoc_giao": int(assigned_tasks),
+        "tong_task_hoan_thanh": int(completed_tasks),
+        "tong_task_dung_han": int(completed_on_time),
+        "trung_binh_task_team": float(team_avg_tasks or 0),
+        "ty_le_hoan_thanh": round(completion_rate * 100, 2),
+        "ty_le_dung_han": round(ontime_rate * 100, 2),
+        "diem_khoi_luong": round(workload_score * 100, 2),
         "diem_kpi": float(final_kpi),
         "he_so_kpi": float(kpi_coefficient),
+        "he_so_luong": float(kpi_coefficient),
+        "xep_loai": kpi_score_to_level(float(final_kpi)),
         "trong_so": {
             "completion_rate": float(weights.completion_rate),
             "on_time_rate": float(weights.on_time_rate),
@@ -252,19 +271,47 @@ def calculate_kpi(db: Session, actor_id: int, actor_role: str, thang: int, nam: 
             f"Workload={workload_score:.4f}; KPI={float(final_kpi):.2f}"
         )
         if existing:
+            existing.phong_ban_id = employee.get("phong_ban_id")
+            existing.tong_task_duoc_giao = int(assigned_tasks)
+            existing.tong_task_hoan_thanh = int(completed_tasks)
+            existing.tong_task_dung_han = int(completed_on_time)
+            existing.trung_binh_task_team = Decimal(str(team_avg_tasks or 0)).quantize(Decimal("0.01"))
+            existing.ty_le_hoan_thanh = Decimal(str(completion_rate * 100)).quantize(Decimal("0.01"))
+            existing.ty_le_dung_han = Decimal(str(ontime_rate * 100)).quantize(Decimal("0.01"))
+            existing.diem_khoi_luong = Decimal(str(workload_score * 100)).quantize(Decimal("0.01"))
+            existing.trong_so_hoan_thanh = weights.completion_rate
+            existing.trong_so_dung_han = weights.on_time_rate
+            existing.trong_so_khoi_luong = weights.workload_score
             existing.chi_tieu = summary
             existing.ket_qua = f"KPI score {float(final_kpi):.2f}; coefficient {float(kpi_coefficient):.4f}"
             existing.diem_kpi = float(final_kpi)
+            existing.he_so_luong = kpi_coefficient
+            existing.xep_loai = kpi_score_to_level(float(final_kpi))
+            existing.trang_thai = "DA_TINH"
             existing.ghi_chu = note
         else:
             db.add(
                 LuuKpi(
                     nhan_vien_id=employee_id,
+                    phong_ban_id=employee.get("phong_ban_id"),
                     thang=thang,
                     nam=nam,
+                    tong_task_duoc_giao=int(assigned_tasks),
+                    tong_task_hoan_thanh=int(completed_tasks),
+                    tong_task_dung_han=int(completed_on_time),
+                    trung_binh_task_team=Decimal(str(team_avg_tasks or 0)).quantize(Decimal("0.01")),
+                    ty_le_hoan_thanh=Decimal(str(completion_rate * 100)).quantize(Decimal("0.01")),
+                    ty_le_dung_han=Decimal(str(ontime_rate * 100)).quantize(Decimal("0.01")),
+                    diem_khoi_luong=Decimal(str(workload_score * 100)).quantize(Decimal("0.01")),
+                    trong_so_hoan_thanh=weights.completion_rate,
+                    trong_so_dung_han=weights.on_time_rate,
+                    trong_so_khoi_luong=weights.workload_score,
                     chi_tieu=summary,
                     ket_qua=f"KPI score {float(final_kpi):.2f}; coefficient {float(kpi_coefficient):.4f}",
                     diem_kpi=float(final_kpi),
+                    he_so_luong=kpi_coefficient,
+                    xep_loai=kpi_score_to_level(float(final_kpi)),
+                    trang_thai="DA_TINH",
                     ghi_chu=note,
                 )
             )
@@ -334,7 +381,7 @@ def list_kpi_records(
 ) -> dict:
     context = load_actor_context(db, actor_id, actor_role)
     resolved_target = target_employee_id
-    if not is_admin(context.actor_role) and not is_manager(context.actor_role):
+    if not is_admin(context.actor_role):
         resolved_target = context.actor_id
     elif resolved_target is not None:
         resolved_target = resolve_target_employee_id(db, context.actor_id, resolved_target, context.actor_role)
@@ -353,9 +400,6 @@ def list_kpi_records(
     if resolved_target is not None:
         where_clauses.append("kpi.nhan_vien_id = :target_employee_id")
         params["target_employee_id"] = resolved_target
-    elif not is_admin(context.actor_role) and is_manager(context.actor_role):
-        where_clauses.append("nv.phong_ban_id = :department_id")
-        params["department_id"] = context.actor_department_id
 
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
     limit = max(page_size, 1)
@@ -367,13 +411,29 @@ def list_kpi_records(
             SELECT
               kpi.id,
               kpi.nhan_vien_id,
+              kpi.phong_ban_id AS kpi_phong_ban_id,
               kpi.thang,
               kpi.nam,
+              kpi.tong_task_duoc_giao,
+              kpi.tong_task_hoan_thanh,
+              kpi.tong_task_dung_han,
+              kpi.trung_binh_task_team,
+              kpi.ty_le_hoan_thanh,
+              kpi.ty_le_dung_han,
+              kpi.diem_khoi_luong,
+              kpi.trong_so_hoan_thanh,
+              kpi.trong_so_dung_han,
+              kpi.trong_so_khoi_luong,
               kpi.chi_tieu,
               kpi.ket_qua,
               kpi.diem_kpi,
+              kpi.he_so_luong,
+              kpi.xep_loai,
+              kpi.trang_thai,
               kpi.ghi_chu,
               kpi.ngay_tao,
+              kpi.ngay_tinh,
+              kpi.ngay_cap_nhat,
               nv.ho_ten,
               nv.chuc_vu,
               nv.phong_ban_id,
@@ -404,7 +464,19 @@ def list_kpi_records(
     data = []
     for row in rows:
         item = dict(row)
-        item["he_so_kpi"] = float(kpi_score_to_coefficient(float(item.get("diem_kpi") or 0)))
+        item["he_so_kpi"] = float(item.get("he_so_luong") or kpi_score_to_coefficient(float(item.get("diem_kpi") or 0)))
+        for key in [
+            "trung_binh_task_team",
+            "ty_le_hoan_thanh",
+            "ty_le_dung_han",
+            "diem_khoi_luong",
+            "trong_so_hoan_thanh",
+            "trong_so_dung_han",
+            "trong_so_khoi_luong",
+            "he_so_luong",
+        ]:
+            if item.get(key) is not None:
+                item[key] = float(item[key])
         data.append(item)
 
     return {

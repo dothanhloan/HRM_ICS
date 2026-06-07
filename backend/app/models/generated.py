@@ -214,21 +214,34 @@ class Luong(Base):
     thang = sa.Column('thang', sa.Integer)
     nam = sa.Column('nam', sa.Integer)
     luong_co_ban = sa.Column('luong_co_ban', sa.Numeric(12, 2))
-    phu_cap = sa.Column('phu_cap', sa.Numeric(12, 2), server_default=sa.text("'0.00'"))
-    thuong = sa.Column('thuong', sa.Numeric(12, 2), server_default=sa.text("'0.00'"))
-    phat = sa.Column('phat', sa.Numeric(12, 2), server_default=sa.text("'0.00'"))
     bao_hiem = sa.Column('bao_hiem', sa.Numeric(12, 2), server_default=sa.text("'0.00'"))
     thue = sa.Column('thue', sa.Numeric(12, 2), server_default=sa.text("'0.00'"))
     luong_thuc_te = sa.Column('luong_thuc_te', sa.Numeric(12, 2))
+    so_ngay_cong_chuan = sa.Column('so_ngay_cong_chuan', sa.Numeric(5, 2), nullable=False, server_default=sa.text("'0.00'"))
+    so_ngay_cong_thuc_te = sa.Column('so_ngay_cong_thuc_te', sa.Numeric(5, 2), nullable=False, server_default=sa.text("'0.00'"))
+    luong_ngay = sa.Column('luong_ngay', sa.Numeric(12, 2), nullable=False, server_default=sa.text("'0.00'"))
+    luong_theo_cong = sa.Column('luong_theo_cong', sa.Numeric(12, 2), nullable=False, server_default=sa.text("'0.00'"))
+    diem_kpi = sa.Column('diem_kpi', sa.Numeric(5, 2), nullable=False, server_default=sa.text("'0.00'"))
+    he_so_kpi = sa.Column('he_so_kpi', sa.Numeric(4, 2), nullable=False, server_default=sa.text("'1.00'"))
+    luong_sau_kpi = sa.Column('luong_sau_kpi', sa.Numeric(12, 2), nullable=False, server_default=sa.text("'0.00'"))
+    muc_luong_dong_bh = sa.Column('muc_luong_dong_bh', sa.Numeric(12, 2), nullable=False, server_default=sa.text("'5100000.00'"))
+    bh_xa_hoi = sa.Column('bh_xa_hoi', sa.Numeric(12, 2), nullable=False, server_default=sa.text("'0.00'"))
+    bh_y_te = sa.Column('bh_y_te', sa.Numeric(12, 2), nullable=False, server_default=sa.text("'0.00'"))
+    bh_that_nghiep = sa.Column('bh_that_nghiep', sa.Numeric(12, 2), nullable=False, server_default=sa.text("'0.00'"))
+    so_lan_di_muon_khong_duyet = sa.Column('so_lan_di_muon_khong_duyet', sa.Integer, nullable=False, server_default=sa.text("'0'"))
+    so_ngay_tru_di_muon = sa.Column('so_ngay_tru_di_muon', sa.Numeric(5, 2), nullable=False, server_default=sa.text("'0.00'"))
+    so_ngay_thieu_check_in_out = sa.Column('so_ngay_thieu_check_in_out', sa.Numeric(5, 2), nullable=False, server_default=sa.text("'0.00'"))
+    so_ngay_nghi_khong_luong = sa.Column('so_ngay_nghi_khong_luong', sa.Numeric(5, 2), nullable=False, server_default=sa.text("'0.00'"))
     ghi_chu = sa.Column('ghi_chu', sa.Text)
-    trang_thai = sa.Column('trang_thai', mysql.ENUM('Chưa trả', 'Đã trả'), server_default=sa.text("'Chưa trả'"))
+    trang_thai = sa.Column('trang_thai', mysql.ENUM('Chờ duyệt', 'Đã chốt', 'Đã thanh toán'), server_default=sa.text("'Chờ duyệt'"))
+    ngay_chot = sa.Column('ngay_chot', sa.Date)
     ngay_tra_luong = sa.Column('ngay_tra_luong', sa.Date)
     ngay_tao = sa.Column('ngay_tao', mysql.TIMESTAMP(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"))
     __table_args__ = (
         sa.ForeignKeyConstraint(['nhan_vien_id'], ['nhanvien.id'], name="luong_ibfk_1", ondelete="CASCADE"),
         sa.Index("nhan_vien_id", 'nhan_vien_id'),
+        sa.UniqueConstraint('nhan_vien_id', 'thang', 'nam', name="uq_luong_nhanvien_thang_nam"),
     )
-
 class LuongCauHinh(Base):
     __tablename__ = "luong_cau_hinh"
     id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
@@ -241,16 +254,35 @@ class LuuKpi(Base):
     __tablename__ = "luu_kpi"
     id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
     nhan_vien_id = sa.Column('nhan_vien_id', sa.Integer)
+    phong_ban_id = sa.Column('phong_ban_id', sa.Integer)
     thang = sa.Column('thang', sa.Integer)
     nam = sa.Column('nam', sa.Integer)
+    tong_task_duoc_giao = sa.Column('tong_task_duoc_giao', sa.Integer, nullable=False, server_default=sa.text("0"))
+    tong_task_hoan_thanh = sa.Column('tong_task_hoan_thanh', sa.Integer, nullable=False, server_default=sa.text("0"))
+    tong_task_dung_han = sa.Column('tong_task_dung_han', sa.Integer, nullable=False, server_default=sa.text("0"))
+    trung_binh_task_team = sa.Column('trung_binh_task_team', sa.Numeric(10, 2), nullable=False, server_default=sa.text("0.00"))
+    ty_le_hoan_thanh = sa.Column('ty_le_hoan_thanh', sa.Numeric(5, 2), nullable=False, server_default=sa.text("0.00"))
+    ty_le_dung_han = sa.Column('ty_le_dung_han', sa.Numeric(5, 2), nullable=False, server_default=sa.text("0.00"))
+    diem_khoi_luong = sa.Column('diem_khoi_luong', sa.Numeric(5, 2), nullable=False, server_default=sa.text("0.00"))
+    trong_so_hoan_thanh = sa.Column('trong_so_hoan_thanh', sa.Numeric(5, 2), nullable=False, server_default=sa.text("0.40"))
+    trong_so_dung_han = sa.Column('trong_so_dung_han', sa.Numeric(5, 2), nullable=False, server_default=sa.text("0.40"))
+    trong_so_khoi_luong = sa.Column('trong_so_khoi_luong', sa.Numeric(5, 2), nullable=False, server_default=sa.text("0.20"))
     chi_tieu = sa.Column('chi_tieu', sa.Text)
     ket_qua = sa.Column('ket_qua', sa.Text)
     diem_kpi = sa.Column('diem_kpi', sa.Float)
+    he_so_luong = sa.Column('he_so_luong', sa.Numeric(4, 2), nullable=False, server_default=sa.text("0.70"))
+    xep_loai = sa.Column('xep_loai', sa.String(50))
+    trang_thai = sa.Column('trang_thai', sa.String(30), nullable=False, server_default=sa.text("'DA_TINH'"))
     ghi_chu = sa.Column('ghi_chu', sa.Text)
     ngay_tao = sa.Column('ngay_tao', mysql.TIMESTAMP(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"))
+    ngay_tinh = sa.Column('ngay_tinh', sa.DateTime, nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"))
+    ngay_cap_nhat = sa.Column('ngay_cap_nhat', sa.DateTime)
     __table_args__ = (
         sa.ForeignKeyConstraint(['nhan_vien_id'], ['nhanvien.id'], name="luu_kpi_ibfk_1", ondelete="CASCADE"),
         sa.Index("nhan_vien_id", 'nhan_vien_id'),
+        sa.Index("idx_luu_kpi_thang_nam", 'thang', 'nam'),
+        sa.Index("idx_luu_kpi_phong_ban", 'phong_ban_id'),
+        sa.UniqueConstraint('nhan_vien_id', 'thang', 'nam', name="uq_luu_kpi_nhanvien_thang_nam"),
     )
 
 class NgayNghiLe(Base):
@@ -438,4 +470,5 @@ class ThongBao(Base):
         sa.ForeignKeyConstraint(['nguoi_nhan_id'], ['nhanvien.id'], name="thong_bao_ibfk_1", ondelete="CASCADE"),
         sa.Index("nguoi_nhan_id", 'nguoi_nhan_id'),
     )
+
 

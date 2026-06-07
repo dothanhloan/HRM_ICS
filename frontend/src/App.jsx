@@ -86,6 +86,7 @@ function App() {
 	const [taskTotal, setTaskTotal] = useState(0);
 	const [taskQuery, setTaskQuery] = useState("");
 	const [taskStatusFilter, setTaskStatusFilter] = useState("");
+	const [taskProjectFilter, setTaskProjectFilter] = useState("");
 	const [taskSort, setTaskSort] = useState("deadline");
 	const [taskStatus, setTaskStatus] = useState({ type: "", message: "" });
 	const [taskLoading, setTaskLoading] = useState(false);
@@ -101,12 +102,6 @@ function App() {
 	const [taskEmployeesLoading, setTaskEmployeesLoading] = useState(false);
 	const [taskProjects, setTaskProjects] = useState([]);
 	const [taskProjectsLoading, setTaskProjectsLoading] = useState(false);
-	const [taskProgressOpen, setTaskProgressOpen] = useState(false);
-	const [taskProgressTarget, setTaskProgressTarget] = useState(null);
-	const [taskProgressForm, setTaskProgressForm] = useState({
-		trang_thai: "Đang thực hiện",
-		phan_tram: 0,
-	});
 	const [taskDetailOpen, setTaskDetailOpen] = useState(false);
 	const [taskDetailTarget, setTaskDetailTarget] = useState(null);
 	const [taskEditingId, setTaskEditingId] = useState(null);
@@ -263,6 +258,7 @@ function App() {
 		setTaskTotal(0);
 		setTaskQuery("");
 		setTaskStatusFilter("");
+		setTaskProjectFilter("");
 		setTaskSort("deadline");
 		setTaskStatus({ type: "", message: "" });
 		setTaskPage(1);
@@ -273,8 +269,6 @@ function App() {
 		setTaskFollowers([]);
 		setTaskEmployees([]);
 		setTaskProjects([]);
-		setTaskProgressOpen(false);
-		setTaskProgressTarget(null);
 		setTaskHistoryLogs([]);
 		setTaskHistoryLoading(false);
 		setDepartmentRows([]);
@@ -912,6 +906,9 @@ function App() {
 			if (taskStatusFilter) {
 				params.set("trang_thai", taskStatusFilter);
 			}
+			if (taskProjectFilter) {
+				params.set("du_an_id", taskProjectFilter);
+			}
 			params.set("sort_by", taskSort);
 			
 			const actor = (user?.vai_tro || "").toLowerCase().includes("admin")
@@ -1188,12 +1185,15 @@ function App() {
 		setTaskEditingId(null);
 		setTaskStatus({ type: "", message: "" });
 		setTaskFormStatus({ type: "", message: "" });
-		const isAdminUser = (user?.vai_tro || "").toLowerCase().includes("admin");
 		if (user?.id) {
 			setTaskForm((prev) => ({ ...prev, nguoi_giao_id: String(user.id) }));
 		}
 		const projects = await fetchTaskProjects();
-		if (!isAdminUser && projects.length === 0) {
+		const leaderProjects = projects.filter((project) => {
+			const leadId = project.lead_id ?? project.truong_du_an_id;
+			return leadId && user?.id && String(leadId) === String(user.id);
+		});
+		if (leaderProjects.length === 0) {
 			setTaskStatus({
 				type: "error",
 				message: "Ban chua phu trach du an nao nen khong the tao cong viec.",
@@ -1201,7 +1201,7 @@ function App() {
 			return;
 		}
 		fetchTaskEmployees(true);
-		if (!isAdminUser && user?.id) {
+		if (user?.id) {
 			setTaskForm((prev) => ({ ...prev, nguoi_giao_id: String(user.id) }));
 		}
 		if (false && user?.id) {
@@ -1262,6 +1262,8 @@ function App() {
 	};
 
 	const submitTaskForm = async (closeDetailOnSuccess = false) => {
+		const editingTaskId = taskEditingId;
+		const isEditingTask = Boolean(editingTaskId);
 		setTaskFormStatus({ type: "", message: "" });
 		if (!taskForm.ten_cong_viec.trim() || !taskForm.mo_ta.trim()) {
 			setTaskFormStatus({ type: "error", message: "Vui long nhap ten va mo ta." });
@@ -1281,7 +1283,7 @@ function App() {
 			setTaskFormStatus({ type: "error", message: "Deadline phai sau ngay bat dau." });
 			return;
 		}
-		if (new Date(taskForm.han_hoan_thanh) < today) {
+		if (!isEditingTask && new Date(taskForm.han_hoan_thanh) < today) {
 			setTaskFormStatus({ type: "error", message: "Deadline khong duoc nho hon ngay hien tai." });
 			return;
 		}
@@ -1300,12 +1302,13 @@ function App() {
 			nguoi_giao_id: taskForm.nguoi_giao_id ? Number(taskForm.nguoi_giao_id) : user.id,
 			nguoi_nhan_ids: taskAssignees,
 			nguoi_theo_doi_ids: taskFollowers,
+			actor_id: user.id,
 			nguoi_thay_doi_id: user.id,
 		};
 
-		if (taskEditingId && taskUploadFile) {
+		if (isEditingTask && taskUploadFile) {
 			try {
-				payload.tai_lieu_cv = await uploadTaskAttachment(taskEditingId, taskUploadFile);
+				payload.tai_lieu_cv = await uploadTaskAttachment(editingTaskId, taskUploadFile);
 			} catch (error) {
 				setTaskFormStatus({ type: "error", message: error.message });
 				return;
@@ -1314,20 +1317,20 @@ function App() {
 
 		try {
 			const response = await fetch(
-				taskEditingId
-					? `${API_BASE}/api/v1/cong_viec/${taskEditingId}/cap_nhat_thong_tin`
+				isEditingTask
+					? `${API_BASE}/api/v1/cong_viec/${editingTaskId}/cap_nhat_thong_tin`
 					: `${API_BASE}/api/v1/cong_viec/tao_moi`,
 				{
-					method: taskEditingId ? "PUT" : "POST",
+					method: isEditingTask ? "PUT" : "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(payload),
 				}
 			);
-			const data = await response.json();
+			const data = await response.json().catch(() => ({}));
 			if (!response.ok) {
-				throw new Error(data.detail || (taskEditingId ? "Khong the cap nhat cong viec" : "Khong the tao cong viec"));
+				throw new Error(data.detail || (isEditingTask ? "Khong the cap nhat cong viec" : "Khong the tao cong viec"));
 			}
-			if (!taskEditingId && taskUploadFile && data.id) {
+			if (!isEditingTask && taskUploadFile && data.id) {
 				await uploadTaskAttachment(data.id, taskUploadFile);
 			}
 			setTaskFormOpen(false);
@@ -1336,27 +1339,19 @@ function App() {
 			}
 			resetTaskForm();
 			fetchTasks(1);
-			if (taskEditingId) {
-				fetchTaskHistory(taskEditingId);
-				fetchTaskWorkflowSteps(taskEditingId);
+			if (isEditingTask && !closeDetailOnSuccess) {
+				fetchTaskHistory(editingTaskId);
+				fetchTaskWorkflowSteps(editingTaskId);
 			}
 			setTaskStatus({
 				type: "success",
-				message: taskEditingId ? "Cập nhật công việc thành công." : "Tạo công việc thành công.",
+				message: isEditingTask ? "Cập nhật công việc thành công." : "Tạo công việc thành công.",
 			});
 		} catch (error) {
 			setTaskFormStatus({ type: "error", message: error.message });
 		}
 	};
 
-	const openProgressModal = (row) => {
-		setTaskProgressTarget(row);
-		setTaskProgressForm({
-			trang_thai: row.trang_thai || "Dang thuc hien",
-			phan_tram: 0,
-		});
-		setTaskProgressOpen(true);
-	};
 
 	const fetchTaskWorkflowSteps = async (taskId) => {
 		try {
@@ -1427,7 +1422,7 @@ function App() {
 			tai_lieu_cv: row.tai_lieu_cv || "",
 		});
 		setTaskAssignees(assigneeIds);
-		setTaskFollowers(assigneeIds);
+		setTaskFollowers([]);
 		setTaskFormStatus({ type: "", message: "" });
 	};
 
@@ -1439,31 +1434,6 @@ function App() {
 		setTaskHistoryLogs([]);
 	};
 
-	const submitTaskProgress = async () => {
-		if (!taskProgressTarget) {
-			return;
-		}
-		try {
-			const response = await fetch(
-				`${API_BASE}/api/v1/cong_viec/${taskProgressTarget.id}/cap_nhat_tien_do`,
-				{
-					method: "PUT",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(taskProgressForm),
-				}
-			);
-			const data = await response.json();
-			if (!response.ok) {
-				throw new Error(data.detail || "Khong the cap nhat tien do");
-			}
-			setTaskProgressOpen(false);
-			setTaskProgressTarget(null);
-			fetchTasks(taskPage);
-			setTaskStatus({ type: "success", message: "Cap nhat tien do thanh cong." });
-		} catch (error) {
-			setTaskStatus({ type: "error", message: error.message });
-		}
-	};
 
 	const submitTaskStepForm = async (payload) => {
 		try {
@@ -1531,6 +1501,45 @@ function App() {
 			setTaskStatus({ type: "success", message: "Xoa buoc quy trinh thanh cong." });
 		} catch (error) {
 			throw error;
+		}
+	};
+
+	const approveTask = async (taskId, action, reason = "") => {
+		if (!user?.id) {
+			setTaskStatus({ type: "error", message: "Khong xac dinh nguoi dung." });
+			return;
+		}
+		try {
+			const response = await fetch(`${API_BASE}/api/v1/cong_viec/${taskId}/duyet`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					nguoi_duyet_id: user.id,
+					action,
+					ly_do_duyet: reason || undefined,
+				}),
+			});
+			const data = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the duyet cong viec");
+			}
+			setTaskDetailTarget((prev) => {
+				if (!prev || Number(prev.id) !== Number(taskId)) {
+					return prev;
+				}
+				return {
+					...prev,
+					trang_thai_duyet: action === "duyet" ? "Đã duyệt" : "Từ chối",
+					trang_thai: action === "duyet" ? "Đã hoàn thành" : "Đang thực hiện",
+					trang_thai_hien_thi: action === "duyet" ? "Đã hoàn thành" : "Đang thực hiện",
+					ly_do_duyet: reason || prev.ly_do_duyet,
+				};
+			});
+			setTaskStatus({ type: "success", message: action === "duyet" ? "Da duyet cong viec." : "Da tu choi cong viec." });
+			fetchTasks(taskPage);
+			fetchTaskHistory(taskId);
+		} catch (error) {
+			setTaskStatus({ type: "error", message: error.message });
 		}
 	};
 
@@ -1717,7 +1726,6 @@ function App() {
 		{ label: "Dashboard", icon: "chart", to: "/dashboard" },
 		{ label: "Dự án", icon: "project", to: "/projects" },
 		{ label: "Công việc", icon: "task", to: "/tasks" },
-		{ label: "Phòng ban", icon: "office", to: "/departments" },
 		{ label: "Chấm công", icon: "calendar", to: "/attendance" },
 		{ label: "Nghỉ phép", icon: "leave", to: "/leave" },
 		{ label: "Tính KPI", icon: "report", to: "/kpi-calculator" },
@@ -2073,6 +2081,7 @@ function App() {
 							taskTotal={taskTotal}
 							taskQuery={taskQuery}
 							taskStatusFilter={taskStatusFilter}
+							taskProjectFilter={taskProjectFilter}
 							taskSort={taskSort}
 							taskStatus={taskStatus}
 							taskLoading={taskLoading}
@@ -2087,34 +2096,30 @@ function App() {
 							taskProjects={taskProjects}
 							taskProjectsLoading={taskProjectsLoading}
 							taskEmployeesLoading={taskEmployeesLoading}
-							taskProgressOpen={taskProgressOpen}
-							taskProgressForm={taskProgressForm}
 							taskForm={taskForm}
 							taskEditingId={taskEditingId}
 							setTaskQuery={setTaskQuery}
 							setTaskStatusFilter={setTaskStatusFilter}
+							setTaskProjectFilter={setTaskProjectFilter}
 							setTaskSort={setTaskSort}
 							setTaskFormOpen={setTaskFormOpen}
 							setTaskForm={setTaskForm}
 							setTaskAssignees={setTaskAssignees}
 							setTaskFollowers={setTaskFollowers}
-							setTaskProgressForm={setTaskProgressForm}
-							setTaskProgressOpen={setTaskProgressOpen}
 							resetTaskForm={resetTaskForm}
 							fetchTasks={fetchTasks}
 							fetchTaskEmployees={fetchTaskEmployees}
+							fetchTaskProjects={fetchTaskProjects}
 							openCreateTask={openCreateTask}
 							toggleAssignee={toggleAssignee}
 							toggleFollower={toggleFollower}
 							handleTaskUploadChange={handleTaskUploadChange}
 							submitTaskForm={submitTaskForm}
-							openProgressModal={openProgressModal}
-							submitTaskProgress={submitTaskProgress}
 							submitTaskStepForm={submitTaskStepForm}
 							submitTaskStepUpdate={submitTaskStepUpdate}
+							approveTask={approveTask}
 							deleteTaskStep={deleteTaskStep}
 							setTaskPageSize={setTaskPageSize}
-							setTaskProgressTarget={setTaskProgressTarget}
 							taskDetailOpen={taskDetailOpen}
 							taskDetailTarget={taskDetailTarget}
 							openTaskDetail={openTaskDetail}
@@ -2130,34 +2135,38 @@ function App() {
 				<Route
 					path="/departments"
 					element={
-						<DepartmentsPage
-							departmentRows={departmentRows}
-							departmentTotal={departmentTotal}
-							departmentQuery={departmentQuery}
-							departmentStatus={departmentStatus}
-							departmentLoading={departmentLoading}
-							departmentPage={departmentPage}
-							departmentPageSize={departmentPageSize}
-							departmentTotalPages={departmentTotalPages}
-							departmentFormOpen={departmentFormOpen}
-							departmentEditingId={departmentEditingId}
-							departmentForm={departmentForm}
-							departmentLeaders={departmentLeaders}
-							departmentLeadersLoading={departmentLeadersLoading}
-							departmentActionTarget={departmentActionTarget}
-							departmentTransferId={departmentTransferId}
-							setDepartmentQuery={setDepartmentQuery}
-							setDepartmentPageSize={setDepartmentPageSize}
-							setDepartmentForm={setDepartmentForm}
-							setDepartmentTransferId={setDepartmentTransferId}
-							fetchDepartments={fetchDepartments}
-							openCreateDepartment={openCreateDepartment}
-							openEditDepartment={openEditDepartment}
-							submitDepartmentForm={submitDepartmentForm}
-							requestDepartmentAction={requestDepartmentAction}
-							confirmDepartmentAction={confirmDepartmentAction}
-							closeDepartmentAction={closeDepartmentAction}
-						/>
+						isAdmin ? (
+							<DepartmentsPage
+								departmentRows={departmentRows}
+								departmentTotal={departmentTotal}
+								departmentQuery={departmentQuery}
+								departmentStatus={departmentStatus}
+								departmentLoading={departmentLoading}
+								departmentPage={departmentPage}
+								departmentPageSize={departmentPageSize}
+								departmentTotalPages={departmentTotalPages}
+								departmentFormOpen={departmentFormOpen}
+								departmentEditingId={departmentEditingId}
+								departmentForm={departmentForm}
+								departmentLeaders={departmentLeaders}
+								departmentLeadersLoading={departmentLeadersLoading}
+								departmentActionTarget={departmentActionTarget}
+								departmentTransferId={departmentTransferId}
+								setDepartmentQuery={setDepartmentQuery}
+								setDepartmentPageSize={setDepartmentPageSize}
+								setDepartmentForm={setDepartmentForm}
+								setDepartmentTransferId={setDepartmentTransferId}
+								fetchDepartments={fetchDepartments}
+								openCreateDepartment={openCreateDepartment}
+								openEditDepartment={openEditDepartment}
+								submitDepartmentForm={submitDepartmentForm}
+								requestDepartmentAction={requestDepartmentAction}
+								confirmDepartmentAction={confirmDepartmentAction}
+								closeDepartmentAction={closeDepartmentAction}
+							/>
+						) : (
+							<Navigate to="/dashboard" replace />
+						)
 					}
 				/>
 				<Route

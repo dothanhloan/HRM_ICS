@@ -7,6 +7,7 @@ function TasksPage({
 	taskTotal,
 	taskQuery,
 	taskStatusFilter,
+	taskProjectFilter,
 	taskSort,
 	taskStatus,
 	taskLoading,
@@ -21,35 +22,31 @@ function TasksPage({
 	taskProjects,
 	taskProjectsLoading,
 	taskEmployeesLoading,
-	taskProgressOpen,
-	taskProgressForm,
 	taskForm,
 	taskEditingId,
 	setTaskQuery,
 	setTaskStatusFilter,
+	setTaskProjectFilter,
 	setTaskSort,
 	setTaskFormOpen,
 	setTaskForm,
 	setTaskAssignees,
 	setTaskFollowers,
-	setTaskProgressForm,
-	setTaskProgressOpen,
 	resetTaskForm,
 	fetchTasks,
 	fetchTaskEmployees,
+	fetchTaskProjects,
 	openCreateTask,
 	toggleAssignee,
 	toggleFollower,
 	handleTaskUploadChange,
 	submitTaskForm,
-	openProgressModal,
-	submitTaskProgress,
 	setTaskPageSize,
-	setTaskProgressTarget,
 	taskDetailOpen,
 	taskDetailTarget,
 	submitTaskStepForm,
 	submitTaskStepUpdate,
+	approveTask,
 	deleteTaskStep,
 	openTaskDetail,
 	closeTaskDetail,
@@ -61,6 +58,7 @@ function TasksPage({
 }) {
 	useEffect(() => {
 		fetchTasks(1);
+		fetchTaskProjects();
 	}, []);
 
 	const [subtaskOpen, setSubtaskOpen] = useState(false);
@@ -78,6 +76,11 @@ function TasksPage({
 	});
 	const [subtaskRecipients, setSubtaskRecipients] = useState([]);
 	const [showRecipientPicker, setShowRecipientPicker] = useState(false);
+	const [rejectReason, setRejectReason] = useState("");
+
+	useEffect(() => {
+		setRejectReason("");
+	}, [taskDetailTarget?.id]);
 
 	const openSubtaskModal = (step = null) => {
 		if (!taskDetailTarget?.id) {
@@ -166,6 +169,19 @@ function TasksPage({
 		}
 	};
 
+	const handleApproveTask = async (action) => {
+		if (!taskDetailTarget?.id || !approveTask) {
+			return;
+		}
+		if (action === "tu_choi") {
+			if (!rejectReason.trim()) {
+				return;
+			}
+		}
+		await approveTask(taskDetailTarget.id, action, action === "tu_choi" ? rejectReason.trim() : "");
+		setRejectReason("");
+	};
+
 	const statusCounts = useMemo(() => {
 		const normalize = (value) =>
 			String(value || "")
@@ -174,9 +190,11 @@ function TasksPage({
 				.replace(/[\u0300-\u036f]/g, "");
 		return taskRows.reduce(
 			(acc, row) => {
-				const status = normalize(row.trang_thai);
+				const status = normalize(row.trang_thai_hien_thi || row.trang_thai);
 				if (status.includes("dang thuc hien")) {
 					acc.inProgress += 1;
+				} else if (status.includes("cho duyet")) {
+					acc.pendingApproval += 1;
 				} else if (status.includes("da hoan thanh")) {
 					acc.completed += 1;
 				} else if (status.includes("tre han")) {
@@ -186,7 +204,7 @@ function TasksPage({
 				}
 				return acc;
 			},
-			{ inProgress: 0, completed: 0, overdue: 0, notStarted: 0 }
+			{ inProgress: 0, pendingApproval: 0, completed: 0, overdue: 0, notStarted: 0 }
 		);
 	}, [taskRows]);
 
@@ -236,11 +254,28 @@ function TasksPage({
 		return leadId ? String(leadId) === String(user.id) : false;
 	}, [selectedProject, user?.id]);
 
-	const canAssignOthers = isAdmin || isProjectLead;
-	const canSaveTask = !taskProjectsLoading && !taskEmployeesLoading;
+	const canAssignOthers = isProjectLead;
+	const isCreatingTask = taskFormOpen && !taskEditingId;
+	const canSelectTaskAssignee = canAssignOthers;
+	const canSaveTask = !taskProjectsLoading && !taskEmployeesLoading && (!isCreatingTask || isProjectLead);
+	const isPendingApproval = useMemo(() => {
+		const normalize = (value) =>
+			String(value || "")
+				.toLowerCase()
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "");
+		const approvalStatus = normalize(taskDetailTarget?.trang_thai_duyet);
+		const displayStatus = normalize(taskDetailTarget?.trang_thai_hien_thi || taskDetailTarget?.trang_thai);
+		return approvalStatus.includes("cho duyet") || displayStatus.includes("cho duyet");
+	}, [taskDetailTarget]);
+	const canApproveTask = Boolean(taskDetailTarget?.id && isAdmin && isPendingApproval);
 
 	useEffect(() => {
 		if (isAdmin) {
+			return;
+		}
+		if (isCreatingTask) {
+			fetchTaskEmployees(true);
 			return;
 		}
 		if (canAssignOthers) {
@@ -250,7 +285,7 @@ function TasksPage({
 		if (user?.id) {
 			setTaskAssignees([user.id]);
 		}
-	}, [isAdmin, canAssignOthers, user?.id]);
+	}, [isAdmin, isCreatingTask, canAssignOthers, user?.id]);
 
 	const statusClassMap = useMemo(
 		() => ({
@@ -258,6 +293,8 @@ function TasksPage({
 			"Chua bat dau": "status-notstarted",
 			"Đang thực hiện": "status-inprogress",
 			"Dang thuc hien": "status-inprogress",
+			"Chờ duyệt": "status-inprogress",
+			"Cho duyet": "status-inprogress",
 			"Đã hoàn thành": "status-complete",
 			"Da hoan thanh": "status-complete",
 			"Trễ hạn": "status-overdue",
@@ -300,8 +337,20 @@ function TasksPage({
 							<option value="">Tất cả trạng thái</option>
 						<option value="Chưa bắt đầu">Chưa bắt đầu</option>
 						<option value="Đang thực hiện">Đang thực hiện</option>
+						<option value={"Ch\u1edd duy\u1ec7t"}>Cho duyet</option>
 						<option value="Đã hoàn thành">Đã hoàn thành</option>
 						<option value="Trễ hạn">Trễ hạn</option>
+						</select>
+						<select
+							value={taskProjectFilter}
+							onChange={(event) => setTaskProjectFilter(event.target.value)}
+						>
+							<option value="">Tất cả dự án</option>
+							{taskProjects.map((project) => (
+								<option key={project.id} value={project.id}>
+									{project.ten_du_an}
+								</option>
+							))}
 						</select>
 						<select value={taskSort} onChange={(event) => setTaskSort(event.target.value)}>
 							<option value="deadline">Sắp xếp theo deadline</option>
@@ -334,6 +383,11 @@ function TasksPage({
 					<span>Đang thực hiện</span>
 					<strong>{statusCounts.inProgress}</strong>
 					<small>Ưu tiên theo dõi</small>
+				</div>
+				<div className="task-stat-card done">
+					<span>Chờ duyệt</span>
+					<strong>{statusCounts.pendingApproval}</strong>
+					<small>Leader cần duyệt</small>
 				</div>
 				<div className="task-stat-card done">
 					<span>Đã hoàn thành</span>
@@ -405,7 +459,6 @@ function TasksPage({
 									<label>Người giao</label>
 									<select
 										value={taskForm.nguoi_giao_id}
-										disabled={!isAdmin}
 										onChange={(event) =>
 											setTaskForm({
 												...taskForm,
@@ -498,20 +551,19 @@ function TasksPage({
 						</div>
 						<div className="task-member-block">
 							<label>Người nhận *</label>
-							{canAssignOthers ? (
-								<select
-									value={taskAssignees[0] || ""}
-									onChange={(event) =>
-										setTaskAssignees(event.target.value ? [Number(event.target.value)] : [])
-									}
-								>
-									<option value="">Chọn 1 nhân viên</option>
+							{canSelectTaskAssignee ? (
+								<div className="task-member-list">
 									{taskEmployees.map((employee) => (
-										<option key={employee.id} value={employee.id}>
-											{employee.ho_ten}
-										</option>
+										<label key={employee.id} className="task-member-item">
+											<input
+												type="checkbox"
+												checked={taskAssignees.includes(employee.id)}
+												onChange={() => toggleAssignee(employee.id)}
+											/>
+											<span>{employee.ho_ten}</span>
+										</label>
 									))}
-								</select>
+								</div>
 							) : (
 								<div className="task-member-list">
 									<p className="task-member-note">
@@ -522,19 +574,18 @@ function TasksPage({
 						</div>
 						<div className="task-member-block">
 							<label>Người theo dõi</label>
-							<select
-								value={taskFollowers[0] || ""}
-								onChange={(event) =>
-									setTaskFollowers(event.target.value ? [Number(event.target.value)] : [])
-								}
-							>
-								<option value="">Chọn 1 nhân viên</option>
+							<div className="task-member-list">
 								{taskEmployees.map((employee) => (
-									<option key={employee.id} value={employee.id}>
-										{employee.ho_ten}
-									</option>
+									<label key={employee.id} className="task-member-item">
+										<input
+											type="checkbox"
+											checked={taskFollowers.includes(employee.id)}
+											onChange={() => toggleFollower(employee.id)}
+										/>
+										<span>{employee.ho_ten}</span>
+									</label>
 								))}
-							</select>
+							</div>
 						</div>
 							
 						{taskProjectsLoading || taskEmployeesLoading ? (
@@ -577,8 +628,8 @@ function TasksPage({
 							<th>Dự án</th>
 							<th>Người nhận</th>
 							<th>Hạn chót</th>
+							<th>Tiến độ</th>
 							<th>Trạng thái</th>
-							<th>Thao tác</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -605,20 +656,16 @@ function TasksPage({
 										<span className="data-emphasis">{row.han_hoan_thanh || "-"}</span>
 									</td>
 									<td>
+										<span className="data-emphasis">{Number(row.tien_do || 0)}%</span>
+									</td>
+									<td>
 										<span
 											className={`status-pill ${
-												statusClassMap[row.trang_thai] || "status-muted"
+												statusClassMap[row.trang_thai_hien_thi || row.trang_thai] || "status-muted"
 											}`}
 										>
-											{row.trang_thai || "-"}
+											{row.trang_thai_hien_thi || row.trang_thai || "-"}
 										</span>
-									</td>
-									<td onClick={(e) => e.stopPropagation()}>
-										<div className="row-actions">
-											<button type="button" onClick={() => openProgressModal(row)}>
-												Cập nhật
-											</button>
-										</div>
 									</td>
 								</tr>
 							))
@@ -661,74 +708,6 @@ function TasksPage({
 					<option value={50}>50 / trang</option>
 				</select>
 			</div>
-			{taskProgressOpen ? (
-				<div className="modal-backdrop">
-					<div className="modal">
-						<div className="modal-header">
-							<h3>Cập nhật tiến độ</h3>
-							<button
-								type="button"
-								className="ghost"
-								onClick={() => {
-									setTaskProgressOpen(false);
-									setTaskProgressTarget(null);
-								}}
-							>
-								Đóng
-							</button>
-						</div>
-						<div className="form-grid">
-							<div className="form-group">
-								<label>Trạng thái</label>
-								<select
-									value={taskProgressForm.trang_thai}
-									onChange={(event) =>
-										setTaskProgressForm({
-											...taskProgressForm,
-											trang_thai: event.target.value,
-										})
-									}
-								>
-									<option value="Chưa bắt đầu">Chưa bắt đầu</option>
-									<option value="Đang thực hiện">Đang thực hiện</option>
-									<option value="Đã hoàn thành">Đã hoàn thành</option>
-									<option value="Trễ hạn">Trễ hạn</option>
-								</select>
-							</div>
-							<div className="form-group">
-								<label>% Tiến độ</label>
-								<input
-									type="number"
-									min="0"
-									max="100"
-									value={taskProgressForm.phan_tram}
-									onChange={(event) =>
-										setTaskProgressForm({
-											...taskProgressForm,
-											phan_tram: Number(event.target.value),
-										})
-									}
-								/>
-							</div>
-						</div>
-						<div className="form-actions">
-							<button type="button" onClick={submitTaskProgress}>
-								Lưu cập nhật
-							</button>
-							<button
-								type="button"
-								className="ghost"
-								onClick={() => {
-									setTaskProgressOpen(false);
-									setTaskProgressTarget(null);
-								}}
-							>
-								Hủy
-							</button>
-						</div>
-					</div>
-				</div>
-			) : null}
 			{taskDetailOpen && taskDetailTarget ? (
 				<div className="modal-backdrop">
 					<div className="modal task-detail-modal">
@@ -850,6 +829,24 @@ function TasksPage({
 											value={taskDetailTarget.trang_thai_duyet || "Chưa duyệt"} 
 											disabled 
 										/>
+                                        {canApproveTask ? (
+                                            <>
+                                                <div className="form-actions">
+                                                    <button type="button" onClick={() => handleApproveTask("duyet")}>
+								{"Duy\u1ec7t ho\u00e0n th\u00e0nh"}
+                                                    </button>
+                                                    <button type="button" className="danger" onClick={() => handleApproveTask("tu_choi")}>
+								{"T\u1eeb ch\u1ed1i"}
+                                                    </button>
+                                                </div>
+                                                <textarea
+                                                    rows="3"
+                                                    placeholder="Nhập lý do từ chối trước khi bấm Từ chối"
+                                                    value={rejectReason}
+                                                    onChange={(event) => setRejectReason(event.target.value)}
+                                                />
+                                            </>
+                                        ) : null}
 									</div>
 									<div className="form-group full">
 										<label>Người nhận</label>
@@ -987,6 +984,12 @@ function TasksPage({
 
 							{/* Nút cập nhật tiến độ */}
 								<div className="detail-actions">
+									{taskFormStatus.message ? (
+										<div className={`alert ${taskFormStatus.type}`}>
+
+											{taskFormStatus.message}
+										</div>
+									) : null}
 									<button type="button" onClick={() => submitTaskForm(true)} className="btn-primary">
 										Lưu thay đổi
 									</button>
@@ -1122,7 +1125,7 @@ function TasksPage({
 								<input type="file" multiple onChange={handleSubtaskFileChange} />
 								<small className="helper-text">Chọn một hoặc nhiều file (PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX)</small>
 								{subtaskForm.tai_lieu_file ? (
-									<p className="helper-text">Đã chọn: {subtaskForm.tai_lieu_file}</p>
+									<p className="helper-text">Da chon: {subtaskForm.tai_lieu_file}</p>
 								) : null}
 							</div>
 						</div>
@@ -1145,3 +1148,4 @@ function TasksPage({
 }
 
 export default TasksPage;
+

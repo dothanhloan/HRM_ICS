@@ -411,3 +411,6 @@ CREATE TABLE `thong_bao` (
   KEY `nguoi_nhan_id` (`nguoi_nhan_id`),
   CONSTRAINT `thong_bao_ibfk_1` FOREIGN KEY (`nguoi_nhan_id`) REFERENCES `nhanvien` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=3337 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+

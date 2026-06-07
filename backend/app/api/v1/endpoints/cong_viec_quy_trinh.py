@@ -77,6 +77,73 @@ def _unique_positive_ids(values) -> list[int]:
 		result.append(item_id)
 	return result
 
+def _is_admin(nhan_vien_id: Optional[int], db: Session) -> bool:
+	if nhan_vien_id is None:
+		return False
+	row = db.execute(
+		text('SELECT vai_tro FROM nhanvien WHERE id = :id'),
+		{'id': nhan_vien_id},
+	).mappings().first()
+	return bool(row and 'admin' in (row.get('vai_tro') or '').lower())
+
+def _get_step_access(step_id: int, actor_id: Optional[int], db: Session):
+	if actor_id is None:
+		return None
+	return db.execute(
+		text(
+			'''
+			SELECT
+				cqt.id,
+				cqt.cong_viec_id,
+				da.lead_id,
+				EXISTS (
+					SELECT 1
+					FROM cong_viec_nguoi_nhan cvnn
+					WHERE cvnn.cong_viec_id = cqt.cong_viec_id
+					  AND cvnn.nhan_vien_id = :actor_id
+				) AS is_task_assignee,
+				EXISTS (
+					SELECT 1
+					FROM quy_trinh_nguoi_nhan qtnn
+					WHERE qtnn.step_id = cqt.id
+					  AND qtnn.nhan_id = :actor_id
+				) AS is_step_assignee
+			FROM cong_viec_quy_trinh cqt
+			JOIN cong_viec cv ON cv.id = cqt.cong_viec_id
+			JOIN du_an da ON da.id = cv.du_an_id
+			WHERE cqt.id = :step_id
+			'''
+		),
+		{'step_id': step_id, 'actor_id': actor_id},
+	).mappings().first()
+
+def _assert_task_leader_or_admin(cong_viec_id: int, actor_id: Optional[int], db: Session) -> None:
+	row = db.execute(
+		text(
+			'''
+			SELECT da.lead_id
+			FROM cong_viec cv
+			JOIN du_an da ON da.id = cv.du_an_id
+			WHERE cv.id = :cong_viec_id
+			'''
+		),
+		{'cong_viec_id': cong_viec_id},
+	).mappings().first()
+	if not row:
+		raise HTTPException(status_code=404, detail='Task not found')
+	if not _is_admin(actor_id, db) and int(row['lead_id'] or 0) != int(actor_id or 0):
+		raise HTTPException(status_code=403, detail='Chi leader du an moi duoc quan ly buoc cong viec')
+
+def _assert_step_assignee_or_leader(step_id: int, actor_id: Optional[int], db: Session) -> None:
+	access = _get_step_access(step_id, actor_id, db)
+	if not access:
+		raise HTTPException(status_code=404, detail='Step not found')
+	if _is_admin(actor_id, db) or int(access['lead_id'] or 0) == int(actor_id or 0):
+		return
+	if access['is_step_assignee'] or access['is_task_assignee']:
+		return
+	raise HTTPException(status_code=403, detail='Chi nguoi duoc giao moi duoc cap nhat buoc cong viec')
+
 
 @router.post('/tao_moi')
 def create_step(payload: CongViecQuyTrinhCreate, db: Session = Depends(get_db)) -> dict:
@@ -89,6 +156,7 @@ def create_step(payload: CongViecQuyTrinhCreate, db: Session = Depends(get_db)) 
 	).scalar()
 	if not cong_viec_exists:
 		raise HTTPException(status_code=404, detail='Task not found')
+	_assert_task_leader_or_admin(payload.cong_viec_id, payload.nguoi_thay_doi_id, db)
 
 	if payload.ngay_bat_dau:
 		try:
@@ -165,6 +233,10 @@ def update_step(step_id: int, payload: CongViecQuyTrinhUpdate, db: Session = Dep
 	).mappings().first()
 	if not current:
 		raise HTTPException(status_code=404, detail='Step not found')
+	if payload.nguoi_nhan_ids is not None or payload.cong_viec_id is not None:
+		_assert_task_leader_or_admin(int(current['cong_viec_id']), payload.nguoi_thay_doi_id, db)
+	else:
+		_assert_step_assignee_or_leader(step_id, payload.nguoi_thay_doi_id, db)
 
 	next_values = {
 		'cong_viec_id': payload.cong_viec_id if payload.cong_viec_id is not None else current['cong_viec_id'],
@@ -226,6 +298,66 @@ def update_step(step_id: int, payload: CongViecQuyTrinhUpdate, db: Session = Dep
 				[{'step_id': step_id, 'nhan_id': item_id} for item_id in recipients],
 			)
 
+	progress = db.execute(
+		text(
+			'''
+			SELECT
+				COUNT(*) AS total_steps,
+				SUM(
+					CASE
+						WHEN LOWER(COALESCE(trang_thai, '')) LIKE '%hoàn thành%'
+						  OR LOWER(COALESCE(trang_thai, '')) LIKE '%hoan thanh%'
+						  OR LOWER(COALESCE(trang_thai, '')) IN ('completed', 'done')
+						THEN 1
+						ELSE 0
+					END
+				) AS completed_steps,
+				SUM(
+					CASE
+						WHEN LOWER(COALESCE(trang_thai, '')) LIKE '%đang%'
+						  OR LOWER(COALESCE(trang_thai, '')) LIKE '%dang%'
+						  OR LOWER(COALESCE(trang_thai, '')) IN ('in_progress', 'doing')
+						THEN 1
+						ELSE 0
+					END
+				) AS in_progress_steps
+			FROM cong_viec_quy_trinh
+			WHERE cong_viec_id = :cong_viec_id
+			'''
+		),
+		{'cong_viec_id': next_values['cong_viec_id']},
+	).mappings().first()
+	if progress and int(progress['total_steps'] or 0) > 0:
+		total_steps = int(progress['total_steps'] or 0)
+		completed_steps = int(progress['completed_steps'] or 0)
+		in_progress_steps = int(progress['in_progress_steps'] or 0)
+		if completed_steps == total_steps:
+			next_task_status = '\u0110ang th\u1ef1c hi\u1ec7n'
+			next_approval_status = 'Ch\u1edd duy\u1ec7t'
+		elif completed_steps > 0 or in_progress_steps > 0:
+			next_task_status = '\u0110ang th\u1ef1c hi\u1ec7n'
+			next_approval_status = 'Ch\u01b0a duy\u1ec7t'
+		else:
+			next_task_status = 'Ch\u01b0a b\u1eaft \u0111\u1ea7u'
+			next_approval_status = 'Ch\u01b0a duy\u1ec7t'
+		db.execute(
+			text(
+				'''
+				UPDATE cong_viec
+				SET trang_thai = :trang_thai,
+					trang_thai_duyet = :trang_thai_duyet,
+					ngay_hoan_thanh = NULL
+				WHERE id = :id
+				  AND LOWER(COALESCE(trang_thai_duyet, '')) NOT IN ('\u0111\u00e3 duy\u1ec7t', 'da duyet', 'approved')
+				'''
+			),
+			{
+				'id': next_values['cong_viec_id'],
+				'trang_thai': next_task_status,
+				'trang_thai_duyet': next_approval_status,
+			},
+		)
+
 	changes: list[str] = []
 	labels = {
 		'ten_buoc': 'tên bước',
@@ -260,6 +392,7 @@ def delete_step(step_id: int, nguoi_thay_doi_id: Optional[int] = None, db: Sessi
 	).mappings().first()
 	if not current:
 		raise HTTPException(status_code=404, detail='Step not found')
+	_assert_task_leader_or_admin(int(current['cong_viec_id']), nguoi_thay_doi_id, db)
 
 	_add_task_history(
 		db,

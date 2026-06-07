@@ -299,6 +299,21 @@ function EmployeesPage({
 								/>
 							</div>
 							<div className="form-group">
+								<label>{"L\u01b0\u01a1ng c\u01a1 b\u1ea3n"}</label>
+								<input
+									type="number"
+									min="0"
+									step="100000"
+									value={employeeForm.luong_co_ban}
+									onChange={(event) =>
+										setEmployeeForm({
+											...employeeForm,
+											luong_co_ban: event.target.value,
+										})
+									}
+								/>
+							</div>
+							<div className="form-group">
 								<label>Phòng ban ID</label>
 								<select
 									value={employeeForm.phong_ban_id}
@@ -701,6 +716,21 @@ function EmployeesPage({
 										setEmployeeForm({
 											...employeeForm,
 											chuc_vu: event.target.value,
+										})
+									}
+								/>
+							</div>
+							<div className="form-group">
+								<label>{"L\u01b0\u01a1ng c\u01a1 b\u1ea3n"}</label>
+								<input
+									type="number"
+									min="0"
+									step="100000"
+									value={employeeForm.luong_co_ban}
+									onChange={(event) =>
+										setEmployeeForm({
+											...employeeForm,
+											luong_co_ban: event.target.value,
 										})
 									}
 								/>
