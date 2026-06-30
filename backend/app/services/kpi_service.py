@@ -265,11 +265,6 @@ def calculate_kpi(db: Session, actor_id: int, actor_role: str, thang: int, nam: 
             .filter(LuuKpi.nam == nam)
             .first()
         )
-        note = ghi_chu or ""
-        summary = (
-            f"Completion={completion_rate:.4f}; OnTime={ontime_rate:.4f}; "
-            f"Workload={workload_score:.4f}; KPI={float(final_kpi):.2f}"
-        )
         if existing:
             existing.phong_ban_id = employee.get("phong_ban_id")
             existing.tong_task_duoc_giao = int(assigned_tasks)
@@ -282,13 +277,8 @@ def calculate_kpi(db: Session, actor_id: int, actor_role: str, thang: int, nam: 
             existing.trong_so_hoan_thanh = weights.completion_rate
             existing.trong_so_dung_han = weights.on_time_rate
             existing.trong_so_khoi_luong = weights.workload_score
-            existing.chi_tieu = summary
-            existing.ket_qua = f"KPI score {float(final_kpi):.2f}; coefficient {float(kpi_coefficient):.4f}"
             existing.diem_kpi = float(final_kpi)
             existing.he_so_luong = kpi_coefficient
-            existing.xep_loai = kpi_score_to_level(float(final_kpi))
-            existing.trang_thai = "DA_TINH"
-            existing.ghi_chu = note
         else:
             db.add(
                 LuuKpi(
@@ -306,13 +296,8 @@ def calculate_kpi(db: Session, actor_id: int, actor_role: str, thang: int, nam: 
                     trong_so_hoan_thanh=weights.completion_rate,
                     trong_so_dung_han=weights.on_time_rate,
                     trong_so_khoi_luong=weights.workload_score,
-                    chi_tieu=summary,
-                    ket_qua=f"KPI score {float(final_kpi):.2f}; coefficient {float(kpi_coefficient):.4f}",
                     diem_kpi=float(final_kpi),
                     he_so_luong=kpi_coefficient,
-                    xep_loai=kpi_score_to_level(float(final_kpi)),
-                    trang_thai="DA_TINH",
-                    ghi_chu=note,
                 )
             )
         db.commit()
@@ -424,16 +409,8 @@ def list_kpi_records(
               kpi.trong_so_hoan_thanh,
               kpi.trong_so_dung_han,
               kpi.trong_so_khoi_luong,
-              kpi.chi_tieu,
-              kpi.ket_qua,
               kpi.diem_kpi,
               kpi.he_so_luong,
-              kpi.xep_loai,
-              kpi.trang_thai,
-              kpi.ghi_chu,
-              kpi.ngay_tao,
-              kpi.ngay_tinh,
-              kpi.ngay_cap_nhat,
               nv.ho_ten,
               nv.chuc_vu,
               nv.phong_ban_id,

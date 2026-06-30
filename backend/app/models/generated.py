@@ -56,21 +56,6 @@ class CongViec(Base):
         sa.Index("fk_cong_viec_du_an", 'du_an_id'),
     )
 
-class CongViecDanhGia(Base):
-    __tablename__ = "cong_viec_danh_gia"
-    id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
-    cong_viec_id = sa.Column('cong_viec_id', sa.Integer)
-    nguoi_danh_gia_id = sa.Column('nguoi_danh_gia_id', sa.Integer)
-    is_from_worker = sa.Column('is_from_worker', sa.Boolean, nullable=False, server_default=sa.text("'0'"))
-    nhan_xet = sa.Column('nhan_xet', sa.Text)
-    thoi_gian = sa.Column('thoi_gian', mysql.TIMESTAMP(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"))
-    __table_args__ = (
-        sa.ForeignKeyConstraint(['cong_viec_id'], ['cong_viec.id'], name="cong_viec_danh_gia_ibfk_1", ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(['nguoi_danh_gia_id'], ['nhanvien.id'], name="cong_viec_danh_gia_ibfk_2", ondelete="CASCADE"),
-        sa.Index("cong_viec_id", 'cong_viec_id'),
-        sa.Index("nguoi_danh_gia_id", 'nguoi_danh_gia_id'),
-    )
-
 class CongViecLichSu(Base):
     __tablename__ = "cong_viec_lich_su"
     id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
@@ -198,15 +183,6 @@ class LichSuCongPhep(Base):
         sa.Index("idx_nhan_vien_nam", 'nhan_vien_id', 'nam'),
     )
 
-class LichTrinh(Base):
-    __tablename__ = "lich_trinh"
-    id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
-    tieu_de = sa.Column('tieu_de', sa.String(255), nullable=False)
-    ngay_bat_dau = sa.Column('ngay_bat_dau', sa.Date, nullable=False)
-    ngay_ket_thuc = sa.Column('ngay_ket_thuc', sa.Date)
-    mo_ta = sa.Column('mo_ta', sa.Text)
-    ngay_tao = sa.Column('ngay_tao', mysql.TIMESTAMP(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"))
-
 class Luong(Base):
     __tablename__ = "luong"
     id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
@@ -267,16 +243,8 @@ class LuuKpi(Base):
     trong_so_hoan_thanh = sa.Column('trong_so_hoan_thanh', sa.Numeric(5, 2), nullable=False, server_default=sa.text("0.40"))
     trong_so_dung_han = sa.Column('trong_so_dung_han', sa.Numeric(5, 2), nullable=False, server_default=sa.text("0.40"))
     trong_so_khoi_luong = sa.Column('trong_so_khoi_luong', sa.Numeric(5, 2), nullable=False, server_default=sa.text("0.20"))
-    chi_tieu = sa.Column('chi_tieu', sa.Text)
-    ket_qua = sa.Column('ket_qua', sa.Text)
     diem_kpi = sa.Column('diem_kpi', sa.Float)
     he_so_luong = sa.Column('he_so_luong', sa.Numeric(4, 2), nullable=False, server_default=sa.text("0.70"))
-    xep_loai = sa.Column('xep_loai', sa.String(50))
-    trang_thai = sa.Column('trang_thai', sa.String(30), nullable=False, server_default=sa.text("'DA_TINH'"))
-    ghi_chu = sa.Column('ghi_chu', sa.Text)
-    ngay_tao = sa.Column('ngay_tao', mysql.TIMESTAMP(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"))
-    ngay_tinh = sa.Column('ngay_tinh', sa.DateTime, nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"))
-    ngay_cap_nhat = sa.Column('ngay_cap_nhat', sa.DateTime)
     __table_args__ = (
         sa.ForeignKeyConstraint(['nhan_vien_id'], ['nhanvien.id'], name="luu_kpi_ibfk_1", ondelete="CASCADE"),
         sa.Index("nhan_vien_id", 'nhan_vien_id'),
@@ -370,26 +338,6 @@ class NhanvienQuyen(Base):
         sa.Index("quyen_id", 'quyen_id'),
     )
 
-class NhomTaiLieu(Base):
-    __tablename__ = "nhom_tai_lieu"
-    id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
-    ten_nhom = sa.Column('ten_nhom', sa.String(255), nullable=False)
-    mo_ta = sa.Column('mo_ta', sa.Text)
-    icon = sa.Column('icon', sa.String(50), server_default=sa.text("'fa-folder'"))
-    mau_sac = sa.Column('mau_sac', sa.String(20), server_default=sa.text("'#3b82f6'"))
-    nguoi_tao_id = sa.Column('nguoi_tao_id', sa.Integer)
-    ngay_tao = sa.Column('ngay_tao', sa.Date, server_default=sa.text("CURRENT_TIMESTAMP"))
-    ngay_cap_nhat = sa.Column('ngay_cap_nhat', sa.Date, server_default=sa.text("CURRENT_TIMESTAMP"))
-    trang_thai = sa.Column('trang_thai', mysql.ENUM('Hoạt động', 'Đã xóa'), server_default=sa.text("'Hoạt động'"))
-    thu_tu = sa.Column('thu_tu', sa.Integer, server_default=sa.text("'0'"))
-    doi_tuong_xem = sa.Column('doi_tuong_xem', mysql.ENUM('Tất cả', 'Giám đốc và Trưởng phòng', 'Chỉ nhân viên'), server_default=sa.text("'Tất cả'"))
-    __table_args__ = (
-        sa.ForeignKeyConstraint(['nguoi_tao_id'], ['nhanvien.id'], name="nhom_tai_lieu_ibfk_1", ondelete="SET NULL"),
-        sa.Index("nguoi_tao_id", 'nguoi_tao_id'),
-        sa.Index("idx_trang_thai", 'trang_thai'),
-        sa.Index("idx_thu_tu", 'thu_tu'),
-    )
-
 class PhanQuyenChucNang(Base):
     __tablename__ = "phan_quyen_chuc_nang"
     id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
@@ -428,31 +376,6 @@ class Quyen(Base):
     nhom_quyen = sa.Column('nhom_quyen', sa.String(100))
     __table_args__ = (
         sa.UniqueConstraint('ma_quyen', name="ma_quyen"),
-    )
-
-class TaiLieu(Base):
-    __tablename__ = "tai_lieu"
-    id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
-    nhom_tai_lieu_id = sa.Column('nhom_tai_lieu_id', sa.Integer)
-    ten_tai_lieu = sa.Column('ten_tai_lieu', sa.String(255), nullable=False)
-    loai_tai_lieu = sa.Column('loai_tai_lieu', sa.String(100))
-    mo_ta = sa.Column('mo_ta', sa.Text)
-    file_name = sa.Column('file_name', sa.String(255), nullable=False)
-    file_path = sa.Column('file_path', sa.String(500), nullable=False)
-    file_size = sa.Column('file_size', sa.BigInteger, nullable=False)
-    file_type = sa.Column('file_type', sa.String(255))
-    nguoi_tao_id = sa.Column('nguoi_tao_id', sa.Integer, nullable=False)
-    ngay_tao = sa.Column('ngay_tao', mysql.TIMESTAMP(), server_default=sa.text("CURRENT_TIMESTAMP"))
-    ngay_cap_nhat = sa.Column('ngay_cap_nhat', mysql.TIMESTAMP(), server_default=sa.text("CURRENT_TIMESTAMP"))
-    trang_thai = sa.Column('trang_thai', sa.String(50), server_default=sa.text("'Hoạt động'"))
-    luot_xem = sa.Column('luot_xem', sa.Integer, server_default=sa.text("'0'"))
-    luot_tai = sa.Column('luot_tai', sa.Integer, server_default=sa.text("'0'"))
-    doi_tuong_xem = sa.Column('doi_tuong_xem', mysql.ENUM('Tất cả', 'Giám đốc và Trưởng phòng', 'Chỉ nhân viên'), server_default=sa.text("'Tất cả'"))
-    __table_args__ = (
-        sa.ForeignKeyConstraint(['nguoi_tao_id'], ['nhanvien.id'], name="fk_tai_lieu_nguoi_tao", ondelete="RESTRICT", onupdate="CASCADE"),
-        sa.ForeignKeyConstraint(['nhom_tai_lieu_id'], ['nhom_tai_lieu.id'], name="tai_lieu_ibfk_1", ondelete="SET NULL"),
-        sa.Index("fk_tai_lieu_nguoi_tao", 'nguoi_tao_id'),
-        sa.Index("nhom_tai_lieu_id", 'nhom_tai_lieu_id'),
     )
 
 class ThongBao(Base):

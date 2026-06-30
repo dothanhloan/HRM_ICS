@@ -1,0 +1,299 @@
+@startuml database_class_diagram
+title HRM_ICS - Database Class Diagram
+skinparam classAttributeIconSize 0
+hide methods
+
+class CauHinhHeThong as "cau_hinh_he_thong" {
+  *id: int not null auto
+  ten_cau_hinh: varchar(100)
+  gia_tri: text
+  mo_ta: text
+  ngay_tao: timestamp not null
+}
+
+class ChamCong as "cham_cong" {
+  *id: int not null auto
+  nhan_vien_id: int
+  ngay: date
+  bao_cao: varchar(255)
+  check_in: time
+  check_out: time
+  loai_cham_cong: varchar(20)
+  trang_thai: varchar(50)
+}
+
+class CongViec as "cong_viec" {
+  *id: int not null auto
+  du_an_id: int
+  ten_cong_viec: varchar(255) not null
+  mo_ta: text
+  han_hoan_thanh: date
+  ngay_gia_han: date
+  muc_do_uu_tien: enum('Thấp','Trung bình','Cao')
+  nguoi_giao_id: int
+  phong_ban_id: int
+  trang_thai: enum('Chưa bắt đầu','Đang thực hiện','Đã hoàn thành','Trễ hạn')
+  trang_thai_duyet: varchar(50)
+  ly_do_duyet: text
+  tai_lieu_cv: varchar(255)
+  file_tai_lieu: varchar(255)
+  nhac_viec: int
+  tinh_trang: varchar(50)
+  ngay_tao: timestamp not null
+  ngay_bat_dau: date
+  ngay_hoan_thanh: date
+}
+
+class CongViecLichSu as "cong_viec_lich_su" {
+  *id: int not null auto
+  cong_viec_id: int
+  nguoi_thay_doi_id: int
+  mo_ta_thay_doi: text
+  thoi_gian: timestamp not null
+}
+
+class CongViecNguoiNhan as "cong_viec_nguoi_nhan" {
+  *id: int not null auto
+  cong_viec_id: int not null
+  nhan_vien_id: int not null
+}
+
+class CongViecQuyTrinh as "cong_viec_quy_trinh" {
+  *id: int not null auto
+  cong_viec_id: int
+  ten_buoc: varchar(255)
+  mo_ta: text
+  trang_thai: enum('Chưa bắt đầu','Đang thực hiện','Đã hoàn thành')
+  ngay_bat_dau: date
+  ngay_ket_thuc: date
+  ngay_tao: timestamp not null
+  tai_lieu_link: varchar(500)
+  tai_lieu_file: varchar(500)
+}
+
+class CongViecTienDo as "cong_viec_tien_do" {
+  *id: int not null auto
+  cong_viec_id: int
+  phan_tram: int
+  thoi_gian_cap_nhat: timestamp not null
+}
+
+class DonNghiPhep as "don_nghi_phep" {
+  *id: int not null auto
+  nhan_vien_id: int not null COMMENT 'ID nhân viên gửi đơn'
+  loai_phep: varchar(50) not null COMMENT 'Loại nghỉ phép: Phép năm, Phép không lương, Nghỉ ốm, Nghỉ thai sản, Nghỉ việc riêng, Khác'
+  ngay_bat_dau: date not null COMMENT 'Ngày bắt đầu nghỉ'
+  ngay_ket_thuc: date not null COMMENT 'Ngày kết thúc nghỉ'
+  so_ngay: decimal(4,1) not null COMMENT 'Số ngày nghỉ (có thể 0.5 cho nửa ngày)'
+  ly_do: text not null COMMENT 'Lý do xin nghỉ'
+  trang_thai: enum('cho_duyet','da_duyet','tu_choi')
+  ly_do_tu_choi: text COMMENT 'Lý do từ chối (nếu có)'
+  nguoi_duyet_id: int
+  nguoi_tao_id: int
+  thoi_gian_tao: timestamp not null
+  thoi_gian_duyet: timestamp
+  ghi_chu: text COMMENT 'Ghi chú thêm'
+}
+
+class DuAn as "du_an" {
+  *id: int not null auto
+  ten_du_an: varchar(255) not null
+  mo_ta: text
+  lead_id: int
+  muc_do_uu_tien: varchar(50)
+  ngay_bat_dau: date
+  ngay_ket_thuc: date
+  ngay_tao: timestamp not null
+  nhom_du_an: varchar(100)
+  phong_ban: varchar(255)
+  trang_thai_duan: varchar(100)
+}
+
+class FileDinhKem as "file_dinh_kem" {
+  *id: int not null auto
+  cong_viec_id: int
+  tien_do_id: int
+  duong_dan_file: varchar(255)
+  mo_ta: text
+  thoi_gian_upload: timestamp not null
+}
+
+class LichSuCongPhep as "lich_su_cong_phep" {
+  *id: int not null auto
+  nhan_vien_id: int not null
+  nam: int not null
+  thang: int
+  so_ngay_cong: decimal(4,1) not null COMMENT 'Số ngày phép được cộng'
+  loai_cong: enum('dau_nam','hang_thang') not null COMMENT 'Loại cộng phép'
+  ly_do: text
+  ngay_cong: timestamp not null
+}
+
+class Luong as "luong" {
+  *id: int not null auto
+  nhan_vien_id: int
+  thang: int
+  nam: int
+  luong_co_ban: decimal(12,2)
+  phu_cap: decimal(12,2)
+  thuong: decimal(12,2)
+  phat: decimal(12,2)
+  bao_hiem: decimal(12,2)
+  thue: decimal(12,2)
+  luong_thuc_te: decimal(12,2)
+  ghi_chu: text
+  trang_thai: enum('Chưa trả','Đã trả')
+  ngay_tra_luong: date
+  ngay_tao: timestamp not null
+}
+
+class LuongCauHinh as "luong_cau_hinh" {
+  *id: int not null auto
+  ten_cau_hinh: varchar(100)
+  gia_tri: varchar(100)
+  mo_ta: text
+  ngay_tao: timestamp not null
+}
+
+class LuuKpi as "luu_kpi" {
+  *id: int not null auto
+  nhan_vien_id: int
+  phong_ban_id: int
+  thang: int
+  nam: int
+  tong_task_duoc_giao: int not null
+  tong_task_hoan_thanh: int not null
+  tong_task_dung_han: int not null
+  trung_binh_task_team: decimal(10,2) not null
+  ty_le_hoan_thanh: decimal(5,2) not null
+  ty_le_dung_han: decimal(5,2) not null
+  diem_khoi_luong: decimal(5,2) not null
+  trong_so_hoan_thanh: decimal(5,2) not null
+  trong_so_dung_han: decimal(5,2) not null
+  trong_so_khoi_luong: decimal(5,2) not null
+  diem_kpi: float
+  he_so_luong: decimal(4,2) not null
+}
+class NgayNghiLe as "ngay_nghi_le" {
+  *id: int not null auto
+  ten_ngay_le: varchar(200) not null COMMENT 'Tên ngày lễ'
+  ngay_bat_dau: date not null COMMENT 'Ngày bắt đầu nghỉ lễ'
+  ngay_ket_thuc: date not null COMMENT 'Ngày kết thúc nghỉ lễ'
+  lap_lai_hang_nam: tinyint(1)
+  ngay_tao: timestamp not null
+}
+
+class NgayPhepNam as "ngay_phep_nam" {
+  *id: int not null auto
+  nhan_vien_id: int not null
+  nam: int not null COMMENT 'Năm'
+  tong_ngay_phep: decimal(4,1)
+  ngay_phep_da_dung: decimal(4,1)
+  ngay_phep_con_lai: decimal(4,1)
+  ngay_phep_nam_truoc: decimal(4,1)
+  da_cong_phep_dau_nam: tinyint(1)
+  ngay_cap_nhat: timestamp not null
+}
+
+class NhanSuLichSu as "nhan_su_lich_su" {
+  *id: int not null auto
+  nhan_vien_id: int
+  loai_thay_doi: varchar(100)
+  gia_tri_cu: text
+  gia_tri_moi: text
+  nguoi_thay_doi_id: int
+  ghi_chu: text
+  thoi_gian: timestamp not null
+}
+
+class Nhanvien as "nhanvien" {
+  *id: int not null auto
+  ho_ten: varchar(100) not null
+  email: varchar(100) not null
+  mat_khau: varchar(255) not null
+  so_dien_thoai: varchar(20)
+  gioi_tinh: enum('Nam','Nữ','Khác')
+  ngay_sinh: date
+  phong_ban_id: int
+  chuc_vu: varchar(100)
+  luong_co_ban: decimal(12,2)
+  trang_thai_lam_viec: enum('Đang làm','Tạm nghỉ','Nghỉ việc')
+  vai_tro: enum('Admin','Quản lý','Nhân viên')
+  ngay_vao_lam: date
+  avatar_url: varchar(255)
+  ngay_tao: timestamp not null
+}
+
+class NhanvienQuyen as "nhanvien_quyen" {
+  *nhanvien_id: int not null
+  *quyen_id: int not null
+}
+
+class PhanQuyenChucNang as "phan_quyen_chuc_nang" {
+  *id: int not null auto
+  vai_tro: enum('Admin','Quản lý','Nhân viên','Trưởng nhóm','Nhân viên cấp cao')
+  chuc_nang: varchar(100)
+  co_quyen: tinyint(1)
+}
+
+class PhongBan as "phong_ban" {
+  *id: int not null auto
+  ten_phong: varchar(100) not null
+  truong_phong_id: int
+  ngay_tao: timestamp not null
+}
+
+class QuyTrinhNguoiNhan as "quy_trinh_nguoi_nhan" {
+  *id: int not null auto
+  step_id: int
+  nhan_id: int
+}
+
+class Quyen as "quyen" {
+  *id: int not null auto
+  ma_quyen: varchar(100) not null
+  ten_quyen: varchar(255) not null
+  nhom_quyen: varchar(100)
+}
+
+class ThongBao as "thong_bao" {
+  *id: int not null auto
+  tieu_de: varchar(255)
+  noi_dung: text
+  nguoi_nhan_id: int
+  loai_thong_bao: text
+  duong_dan: varchar(500)
+  da_doc: tinyint(1)
+  ngay_doc: timestamp
+  ngay_tao: timestamp not null
+}
+
+' Relationships generated from FOREIGN KEY constraints
+Nhanvien "1" <-- "0..*" ChamCong : nhan_vien_id -> id
+Nhanvien "1" <-- "0..*" CongViec : nguoi_giao_id -> id
+PhongBan "1" <-- "0..*" CongViec : phong_ban_id -> id
+DuAn "1" <-- "0..*" CongViec : du_an_id -> id
+CongViec "1" <-- "0..*" CongViecLichSu : cong_viec_id -> id
+Nhanvien "1" <-- "0..*" CongViecLichSu : nguoi_thay_doi_id -> id
+CongViec "1" <-- "0..*" CongViecNguoiNhan : cong_viec_id -> id
+Nhanvien "1" <-- "0..*" CongViecNguoiNhan : nhan_vien_id -> id
+CongViec "1" <-- "0..*" CongViecQuyTrinh : cong_viec_id -> id
+CongViec "1" <-- "0..*" CongViecTienDo : cong_viec_id -> id
+Nhanvien "1" <-- "0..*" DonNghiPhep : nguoi_duyet_id -> id
+Nhanvien "1" <-- "0..*" DonNghiPhep : nhan_vien_id -> id
+Nhanvien "1" <-- "0..*" DuAn : lead_id -> id
+CongViec "1" <-- "0..*" FileDinhKem : cong_viec_id -> id
+CongViecTienDo "1" <-- "0..*" FileDinhKem : tien_do_id -> id
+Nhanvien "1" <-- "0..*" LichSuCongPhep : nhan_vien_id -> id
+Nhanvien "1" <-- "0..*" Luong : nhan_vien_id -> id
+Nhanvien "1" <-- "0..*" LuuKpi : nhan_vien_id -> id
+Nhanvien "1" <-- "0..*" NgayPhepNam : nhan_vien_id -> id
+Nhanvien "1" <-- "0..*" NhanSuLichSu : nhan_vien_id -> id
+Nhanvien "1" <-- "0..*" NhanSuLichSu : nguoi_thay_doi_id -> id
+PhongBan "1" <-- "0..*" Nhanvien : phong_ban_id -> id
+Nhanvien "1" <-- "0..*" PhongBan : truong_phong_id -> id
+CongViecQuyTrinh "1" <-- "0..*" QuyTrinhNguoiNhan : step_id -> id
+Nhanvien "1" <-- "0..*" QuyTrinhNguoiNhan : nhan_id -> id
+Nhanvien "1" <-- "0..*" ThongBao : nguoi_nhan_id -> id
+
+@enduml

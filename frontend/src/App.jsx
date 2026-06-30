@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import "./styles/login.css";
 
@@ -18,11 +18,21 @@ import TasksPage from "./pages/TasksPage";
 import KpiCalculatorPage from "./pages/KpiCalculatorPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const REMEMBER_LOGIN_KEY = "ics_hrms_remember_login";
+
+const getRememberedLogin = () => {
+	try {
+		return localStorage.getItem(REMEMBER_LOGIN_KEY) || "";
+	} catch (error) {
+		return "";
+	}
+};
 
 function App() {
 	const navigate = useNavigate();
-	const [identifier, setIdentifier] = useState("");
+	const [identifier, setIdentifier] = useState(() => getRememberedLogin());
 	const [password, setPassword] = useState("");
+	const [rememberLogin, setRememberLogin] = useState(() => Boolean(getRememberedLogin()));
 	const [status, setStatus] = useState({ type: "", message: "" });
 	const [loading, setLoading] = useState(false);
 	const [user, setUser] = useState(null);
@@ -140,6 +150,10 @@ function App() {
 	const [departmentLeadersLoading, setDepartmentLeadersLoading] = useState(false);
 	const [departmentActionTarget, setDepartmentActionTarget] = useState(null);
 	const [departmentTransferId, setDepartmentTransferId] = useState("");
+	const [selectedDepartment, setSelectedDepartment] = useState(null);
+	const [departmentEmployees, setDepartmentEmployees] = useState([]);
+	const [departmentEmployeesLoading, setDepartmentEmployeesLoading] = useState(false);
+	const [departmentEmployeesStatus, setDepartmentEmployeesStatus] = useState({ type: "", message: "" });
 	const [projectForm, setProjectForm] = useState({
 		ten_du_an: "",
 		mo_ta: "",
@@ -173,7 +187,7 @@ function App() {
 		setStatus({ type: "", message: "" });
 
 		if (!identifier.trim() || !password.trim()) {
-			setStatus({ type: "error", message: "Vui long nhap day du thong tin." });
+			setStatus({ type: "error", message: "Vui lòng nhập đầy đủ thông tin." });
 			return;
 		}
 
@@ -192,13 +206,18 @@ function App() {
 
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Dang nhap that bai");
+				throw new Error(data.detail || "Đăng nhập thất bại");
 			}
 
 			setUser(data.user);
 			setAttendanceToday(null);
 			setAttendanceHistory([]);
 			setAttendanceStatus({ type: "", message: "" });
+			if (rememberLogin) {
+				localStorage.setItem(REMEMBER_LOGIN_KEY, identifier.trim());
+			} else {
+				localStorage.removeItem(REMEMBER_LOGIN_KEY);
+			}
 			setStatus({ type: "", message: "" });
 			navigate("/dashboard");
 		} catch (error) {
@@ -208,9 +227,17 @@ function App() {
 		}
 	};
 
+	const handleRememberLoginChange = (checked) => {
+		setRememberLogin(checked);
+		if (!checked) {
+			localStorage.removeItem(REMEMBER_LOGIN_KEY);
+		}
+	};
+
+
 	const handleLogout = () => {
 		setUser(null);
-		setIdentifier("");
+		setIdentifier(rememberLogin ? getRememberedLogin() : "");
 		setPassword("");
 		setStatus({ type: "", message: "" });
 		setEmployeeRows([]);
@@ -287,10 +314,13 @@ function App() {
 		setDepartmentActionTarget(null);
 		setDepartmentTransferId("");
 		setDepartmentLeaders([]);
+		setSelectedDepartment(null);
+		setDepartmentEmployees([]);
+		setDepartmentEmployeesStatus({ type: "", message: "" });
 		navigate("/login");
 	};
 
-	const fetchUserProfile = async (userId) => {
+	const fetchUserProfile = useCallback(async (userId) => {
 		const response = await fetch(`${API_BASE}/api/v1/auth/profile/${userId}`);
 		const data = await response.json();
 		if (!response.ok) {
@@ -300,7 +330,21 @@ function App() {
 			setUser((prev) => ({ ...(prev || {}), ...data.data }));
 		}
 		return data.data;
-	};
+	}, []);
+
+	const updateUserProfile = useCallback(async (userId, payload) => {
+		const response = await fetch(`${API_BASE}/api/v1/nhanvien/${userId}?actor=employee`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+		const data = await response.json();
+		if (!response.ok) {
+			throw new Error(data.detail || "Khong the cap nhat ho so ca nhan");
+		}
+		const profile = await fetchUserProfile(userId);
+		return profile || data.data;
+	}, [fetchUserProfile]);
 
 	const changeUserPassword = async ({ user_id, old_password, new_password }) => {
 		const response = await fetch(`${API_BASE}/api/v1/auth/change_password`, {
@@ -801,7 +845,7 @@ function App() {
 			};
 
 			if (employeeEditingId) {
-				const response = await fetch(`${API_BASE}/api/v1/nhanvien/${employeeEditingId}?actor=admin`, {
+				const response = await fetch(`${API_BASE}/api/v1/nhanvien/${employeeEditingId}?actor=admin&actor_id=${user?.id || ""}`, {
 					method: "PUT",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(payload),
@@ -811,7 +855,7 @@ function App() {
 					throw new Error(data.detail || "Khong the cap nhat nhan vien");
 				}
 			} else {
-				const response = await fetch(`${API_BASE}/api/v1/nhanvien`, {
+				const response = await fetch(`${API_BASE}/api/v1/nhanvien?actor_id=${user?.id || ""}`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(payload),
@@ -839,7 +883,7 @@ function App() {
 			return;
 		}
 		try {
-			await fetch(`${API_BASE}/api/v1/nhanvien/${deleteTarget.id}`, { method: "DELETE" });
+			await fetch(`${API_BASE}/api/v1/nhanvien/${deleteTarget.id}?actor_id=${user?.id || ""}`, { method: "DELETE" });
 			fetchEmployees(employeePage);
 		} catch (error) {
 			setEmployeeStatus({ type: "error", message: error.message });
@@ -1009,6 +1053,33 @@ function App() {
 			setDepartmentStatus({ type: "error", message: error.message });
 		} finally {
 			setDepartmentLoading(false);
+		}
+	};
+
+
+	const fetchDepartmentEmployees = async (department) => {
+		setSelectedDepartment(department);
+		setDepartmentEmployees([]);
+		setDepartmentEmployeesStatus({ type: "", message: "" });
+		setDepartmentEmployeesLoading(true);
+		try {
+			const params = new URLSearchParams();
+			params.set("phong_ban_id", String(department.id));
+			params.set("page", "1");
+			params.set("page_size", String(Math.max(Number(department.so_nhan_vien) || 0, 200)));
+			const response = await fetch(`${API_BASE}/api/v1/nhanvien?${params.toString()}`);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai danh sach nhan vien phong ban");
+			}
+			setDepartmentEmployees(data.data || []);
+			if (!data.data || data.data.length === 0) {
+				setDepartmentEmployeesStatus({ type: "info", message: "Phòng ban này chưa có nhân viên." });
+			}
+		} catch (error) {
+			setDepartmentEmployeesStatus({ type: "error", message: error.message });
+		} finally {
+			setDepartmentEmployeesLoading(false);
 		}
 	};
 
@@ -1930,7 +2001,7 @@ function App() {
 	const canViewLeaveStats = canManageLeave || hasPermission(["thong_ke_phep", "leave_stats"]);
 	const canManageProjects = hasPermission(["du_an", "du an", "projects"]);
 	const canManageTasks = hasPermission(["cong_viec", "cong viec", "tasks"]);
-	const canUseKpi = hasPermission(["kpi"]);
+	const canUseKpi = Boolean(user?.id) || hasPermission(["kpi"]);
 	const canUseSalary = hasPermission(["luong", "salary", "payroll"]);
 	const visibleMenuItems = [
 		{ label: "Dashboard", icon: "chart", to: "/dashboard" },
@@ -1978,6 +2049,8 @@ function App() {
 							loading={loading}
 							onIdentifierChange={setIdentifier}
 							onPasswordChange={setPassword}
+							rememberLogin={rememberLogin}
+							onRememberLoginChange={handleRememberLoginChange}
 							onSubmit={handleSubmit}
 						/>
 					}
@@ -2003,7 +2076,13 @@ function App() {
 				<Route path="/dashboard" element={<DashboardPage user={user} isAdmin={isAdmin} apiBase={API_BASE} />} />
 				<Route
 					path="/profile"
-					element={<ProfilePage user={user} fetchProfile={fetchUserProfile} />}
+					element={
+						<ProfilePage
+							user={user}
+							fetchProfile={fetchUserProfile}
+							updateProfile={updateUserProfile}
+						/>
+					}
 				/>
 				<Route
 					path="/change-password"
@@ -2241,11 +2320,16 @@ function App() {
 								departmentLeadersLoading={departmentLeadersLoading}
 								departmentActionTarget={departmentActionTarget}
 								departmentTransferId={departmentTransferId}
+								selectedDepartment={selectedDepartment}
+								departmentEmployees={departmentEmployees}
+								departmentEmployeesLoading={departmentEmployeesLoading}
+								departmentEmployeesStatus={departmentEmployeesStatus}
 								setDepartmentQuery={setDepartmentQuery}
 								setDepartmentPageSize={setDepartmentPageSize}
 								setDepartmentForm={setDepartmentForm}
 								setDepartmentTransferId={setDepartmentTransferId}
 								fetchDepartments={fetchDepartments}
+								fetchDepartmentEmployees={fetchDepartmentEmployees}
 								openCreateDepartment={openCreateDepartment}
 								openEditDepartment={openEditDepartment}
 								submitDepartmentForm={submitDepartmentForm}
@@ -2271,6 +2355,8 @@ function App() {
 					element={
 						canManageEmployees ? (
 							<EmployeesPage
+								apiBase={API_BASE}
+								user={user}
 								employeeRows={employeeRows}
 								employeeTotal={employeeTotal}
 								employeeQuery={employeeQuery}
@@ -2316,10 +2402,4 @@ function App() {
 }
 
 export default App;
-
-
-
-
-
-
 

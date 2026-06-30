@@ -56,20 +56,6 @@ CREATE TABLE `cong_viec` (
   CONSTRAINT `fk_cong_viec_du_an` FOREIGN KEY (`du_an_id`) REFERENCES `du_an` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=582 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `cong_viec_danh_gia` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `cong_viec_id` int DEFAULT NULL,
-  `nguoi_danh_gia_id` int DEFAULT NULL,
-  `is_from_worker` tinyint(1) NOT NULL DEFAULT '0',
-  `nhan_xet` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `thoi_gian` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `cong_viec_id` (`cong_viec_id`),
-  KEY `nguoi_danh_gia_id` (`nguoi_danh_gia_id`),
-  CONSTRAINT `cong_viec_danh_gia_ibfk_1` FOREIGN KEY (`cong_viec_id`) REFERENCES `cong_viec` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `cong_viec_danh_gia_ibfk_2` FOREIGN KEY (`nguoi_danh_gia_id`) REFERENCES `nhanvien` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=24 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE `cong_viec_lich_su` (
   `id` int NOT NULL AUTO_INCREMENT,
   `cong_viec_id` int DEFAULT NULL,
@@ -189,16 +175,6 @@ CREATE TABLE `lich_su_cong_phep` (
   CONSTRAINT `fk_lich_su_cong_phep` FOREIGN KEY (`nhan_vien_id`) REFERENCES `nhanvien` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=121 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `lich_trinh` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `tieu_de` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `ngay_bat_dau` date NOT NULL,
-  `ngay_ket_thuc` date DEFAULT NULL,
-  `mo_ta` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `ngay_tao` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=20 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE `luong` (
   `id` int NOT NULL AUTO_INCREMENT,
   `nhan_vien_id` int DEFAULT NULL,
@@ -232,15 +208,26 @@ CREATE TABLE `luong_cau_hinh` (
 CREATE TABLE `luu_kpi` (
   `id` int NOT NULL AUTO_INCREMENT,
   `nhan_vien_id` int DEFAULT NULL,
+  `phong_ban_id` int DEFAULT NULL,
   `thang` int DEFAULT NULL,
   `nam` int DEFAULT NULL,
-  `chi_tieu` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `ket_qua` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `tong_task_duoc_giao` int NOT NULL DEFAULT '0',
+  `tong_task_hoan_thanh` int NOT NULL DEFAULT '0',
+  `tong_task_dung_han` int NOT NULL DEFAULT '0',
+  `trung_binh_task_team` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `ty_le_hoan_thanh` decimal(5,2) NOT NULL DEFAULT '0.00',
+  `ty_le_dung_han` decimal(5,2) NOT NULL DEFAULT '0.00',
+  `diem_khoi_luong` decimal(5,2) NOT NULL DEFAULT '0.00',
+  `trong_so_hoan_thanh` decimal(5,2) NOT NULL DEFAULT '0.40',
+  `trong_so_dung_han` decimal(5,2) NOT NULL DEFAULT '0.40',
+  `trong_so_khoi_luong` decimal(5,2) NOT NULL DEFAULT '0.20',
   `diem_kpi` float DEFAULT NULL,
-  `ghi_chu` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `ngay_tao` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `he_so_luong` decimal(4,2) NOT NULL DEFAULT '0.70',
   PRIMARY KEY (`id`),
   KEY `nhan_vien_id` (`nhan_vien_id`),
+  KEY `idx_luu_kpi_thang_nam` (`thang`,`nam`),
+  KEY `idx_luu_kpi_phong_ban` (`phong_ban_id`),
+  UNIQUE KEY `uq_luu_kpi_nhanvien_thang_nam` (`nhan_vien_id`,`thang`,`nam`),
   CONSTRAINT `luu_kpi_ibfk_1` FOREIGN KEY (`nhan_vien_id`) REFERENCES `nhanvien` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -316,25 +303,6 @@ CREATE TABLE `nhanvien_quyen` (
   KEY `quyen_id` (`quyen_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `nhom_tai_lieu` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `ten_nhom` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `mo_ta` text COLLATE utf8mb4_unicode_ci,
-  `icon` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'fa-folder',
-  `mau_sac` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT '#3b82f6',
-  `nguoi_tao_id` int DEFAULT NULL,
-  `ngay_tao` datetime DEFAULT CURRENT_TIMESTAMP,
-  `ngay_cap_nhat` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `trang_thai` enum('Hoạt động','Đã xóa') COLLATE utf8mb4_unicode_ci DEFAULT 'Hoạt động',
-  `thu_tu` int DEFAULT '0',
-  `doi_tuong_xem` enum('Tất cả','Giám đốc và Trưởng phòng','Chỉ nhân viên') COLLATE utf8mb4_unicode_ci DEFAULT 'Tất cả',
-  PRIMARY KEY (`id`),
-  KEY `nguoi_tao_id` (`nguoi_tao_id`),
-  KEY `idx_trang_thai` (`trang_thai`),
-  KEY `idx_thu_tu` (`thu_tu`),
-  CONSTRAINT `nhom_tai_lieu_ibfk_1` FOREIGN KEY (`nguoi_tao_id`) REFERENCES `nhanvien` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE `phan_quyen_chuc_nang` (
   `id` int NOT NULL AUTO_INCREMENT,
   `vai_tro` enum('Admin','Quản lý','Nhân viên','Trưởng nhóm','Nhân viên cấp cao') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -372,30 +340,6 @@ CREATE TABLE `quyen` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `ma_quyen` (`ma_quyen`)
 ) ENGINE=InnoDB AUTO_INCREMENT=61 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `tai_lieu` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `nhom_tai_lieu_id` int DEFAULT NULL,
-  `ten_tai_lieu` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `loai_tai_lieu` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `mo_ta` text COLLATE utf8mb4_unicode_ci,
-  `file_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `file_path` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `file_size` bigint NOT NULL,
-  `file_type` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `nguoi_tao_id` int NOT NULL,
-  `ngay_tao` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `ngay_cap_nhat` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `trang_thai` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'Hoạt động',
-  `luot_xem` int DEFAULT '0',
-  `luot_tai` int DEFAULT '0',
-  `doi_tuong_xem` enum('Tất cả','Giám đốc và Trưởng phòng','Chỉ nhân viên') COLLATE utf8mb4_unicode_ci DEFAULT 'Tất cả',
-  PRIMARY KEY (`id`),
-  KEY `fk_tai_lieu_nguoi_tao` (`nguoi_tao_id`),
-  KEY `nhom_tai_lieu_id` (`nhom_tai_lieu_id`),
-  CONSTRAINT `fk_tai_lieu_nguoi_tao` FOREIGN KEY (`nguoi_tao_id`) REFERENCES `nhanvien` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT `tai_lieu_ibfk_1` FOREIGN KEY (`nhom_tai_lieu_id`) REFERENCES `nhom_tai_lieu` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=45 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `thong_bao` (
   `id` int NOT NULL AUTO_INCREMENT,

@@ -2,10 +2,19 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
-function KpiCalculatorPage({ user, isAdmin, isManager }) {
+const getDefaultKpiPeriod = () => {
 	const now = new Date();
-	const [month, setMonth] = useState(String(now.getMonth() + 1));
-	const [year, setYear] = useState(String(now.getFullYear()));
+	const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+	return {
+		month: String(previousMonth.getMonth() + 1),
+		year: String(previousMonth.getFullYear()),
+	};
+};
+
+function KpiCalculatorPage({ user, isAdmin, isManager }) {
+	const defaultPeriod = getDefaultKpiPeriod();
+	const [month, setMonth] = useState(defaultPeriod.month);
+	const [year, setYear] = useState(defaultPeriod.year);
 	const [search, setSearch] = useState("");
 	const [rows, setRows] = useState([]);
 	const [total, setTotal] = useState(0);

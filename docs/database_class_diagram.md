@@ -1,0 +1,22 @@
+# Bi?u ?? l?p database HRM_ICS
+
+File n?y ???c d?ng t? `backend/schema_only.sql` v? bi?u di?n m?i b?ng nh? m?t l?p, c?c c?t nh? thu?c t?nh, quan h? t? `FOREIGN KEY` nh? association.
+
+## File bi?u ??
+
+- PlantUML: `docs/database_class_diagram.puml`
+
+## C?ch xem
+
+- M? `docs/database_class_diagram.puml` b?ng extension PlantUML trong VS Code/IntelliJ.
+- Ho?c d?ng PlantUML CLI:
+
+```bash
+plantuml docs/database_class_diagram.puml
+```
+
+## Ghi ch?
+
+- D?u `*` tr??c thu?c t?nh l? kh?a ch?nh.
+- Quan h? ???c sinh t? c?c r?ng bu?c `FOREIGN KEY` trong schema.
+- M?t s? gi? tr? ti?ng Vi?t trong enum/default c?a file SQL hi?n b? mojibake, n?n bi?u ?? gi? nguy?n ki?u d? li?u theo schema g?c thay v? di?n gi?i l?i n?i dung enum.

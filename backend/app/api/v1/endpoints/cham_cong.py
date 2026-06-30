@@ -246,8 +246,11 @@ def _merge_bao_cao(
 
 def _resolve_status(check_in_time: Optional[time], check_out_time: Optional[time]) -> str:
 	check_in_time = _normalize_time(check_in_time)
+	check_out_time = _normalize_time(check_out_time)
 	if not check_in_time:
 		return "Bình thường"
+	if check_out_time and check_out_time < WORK_END:
+		return "Thiếu giờ"
 	return "Đi trễ" if check_in_time > WORK_LATE else "Đúng giờ"
 
 
@@ -612,7 +615,10 @@ def check_out(payload: ChamCongCheckPayload, db: Session = Depends(get_db)) -> d
 	).mappings().first()
 
 	if not row or not row["check_in"]:
-		raise HTTPException(status_code=400, detail="Chua check-in")
+		raise HTTPException(
+			status_code=400,
+			detail="Check-out không khả dụng, bạn chưa check-in",
+		)
 	if row["check_out"]:
 		raise HTTPException(status_code=400, detail="Da check-out")
 

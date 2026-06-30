@@ -1,11 +1,24 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 const COMPANY_LOCATION = {
-	lat: 20.980389,
-	lng: 105.813893,
+	lat: 21.007760,
+	lng: 105.824719,
 };
 
-const CHECKIN_RADIUS_METERS = 200;
+const CHECKIN_RADIUS_METERS = 1000;
+
+const normalizeVietnameseText = (value) => {
+	const text = String(value || "");
+	if (!/[ÂÃÄÆ]/.test(text)) {
+		return text;
+	}
+	try {
+		const bytes = Uint8Array.from(Array.from(text), (char) => char.charCodeAt(0) & 0xff);
+		return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+	} catch (error) {
+		return text;
+	}
+};
 
 function AttendancePage({
 	user,
@@ -50,7 +63,7 @@ function AttendancePage({
 	const historyRows = attendanceHistory || [];
 
 	const summaryStats = useMemo(() => {
-		const normalize = (value) => String(value || "").toLowerCase();
+		const normalize = (value) => normalizeVietnameseText(value).toLowerCase();
 		const totalDays = historyRows.length;
 		const lateDays = historyRows.filter((row) => normalize(row.trang_thai).includes("tre"))
 			.length;
@@ -340,7 +353,7 @@ function AttendancePage({
 	};
 
 	const normalizeAttendanceStatus = (value) =>
-		String(value || "")
+		normalizeVietnameseText(value)
 			.normalize("NFD")
 			.replace(/[\u0300-\u036f]/g, "")
 			.toLowerCase();
@@ -368,6 +381,14 @@ function AttendancePage({
 			return "status-success";
 		}
 		return "status-muted";
+	};
+
+	const formatAttendanceType = (value) => {
+		const type = String(value || "office").toLowerCase();
+		if (type === "wfh") {
+			return "WFH";
+		}
+		return "Văn phòng";
 	};
 
 	const getInitials = (name) =>
@@ -424,14 +445,14 @@ function AttendancePage({
 						<span className="status-label">Trạng thái hôm nay:</span>
 						{attendanceToday?.check_in ? (
 							<span className="status-pill status-success">
-								Check-in: {attendanceToday.check_in}
+								Check-in: {formatTime(attendanceToday.check_in)}
 							</span>
 						) : (
 							<span className="status-pill status-muted">Chưa check-in</span>
 						)}
 						{attendanceToday?.check_out ? (
 							<span className="status-pill status-success">
-								Check-out: {attendanceToday.check_out}
+								Check-out: {formatTime(attendanceToday.check_out)}
 							</span>
 						) : (
 							<span className="status-pill status-muted">Chưa check-out</span>
@@ -441,25 +462,32 @@ function AttendancePage({
 
 				<div className="attendance-actions">
 					{!isAdmin ? (
-						<div className="attendance-buttons">
-							<button
-								type="button"
-								className="btn-checkin"
-								onClick={handleCheckInClick}
-								disabled={locating}
-							>
-								Check-in
-							</button>
-							<button
-								type="button"
-								className="btn-checkout"
-								onClick={handleCheckOut}
-							>
-								Check-out
-							</button>
-							<button type="button" className="btn-wfh" onClick={handleWfhClick}>
-								WFH
-							</button>
+						<div>
+							<div className="attendance-buttons">
+								<button
+									type="button"
+									className="btn-checkin"
+									onClick={handleCheckInClick}
+									disabled={locating}
+								>
+									Check-in
+								</button>
+								<button
+									type="button"
+									className="btn-checkout"
+									onClick={handleCheckOut}
+								>
+									Check-out
+								</button>
+								<button type="button" className="btn-wfh" onClick={handleWfhClick}>
+									WFH
+								</button>
+							</div>
+							{attendanceStatus?.message ? (
+								<div className={`alert ${attendanceStatus.type || "info"}`}>
+									{attendanceStatus.message}
+								</div>
+							) : null}
 						</div>
 					) : (
 						<div className="attendance-buttons">
@@ -511,26 +539,28 @@ function AttendancePage({
 								<th scope="col">Check-out</th>
 								<th scope="col">Số giờ</th>
 								<th scope="col">Trạng thái</th>
+								<th scope="col">Hình thức chấm công</th>
 								<th scope="col">{isAdmin ? "Hành động" : "Báo cáo"}</th>
 							</tr>
 						</thead>
 						<tbody>
 							{attendanceLoading ? (
 								<tr>
-									<td className="attendance-empty-state" colSpan={isAdmin ? 11 : 6}>
+									<td className="attendance-empty-state" colSpan={isAdmin ? 12 : 7}>
 										Đang tải dữ liệu...
 									</td>
 								</tr>
 							) : historyRows.length === 0 ? (
 								<tr>
-									<td className="attendance-empty-state" colSpan={isAdmin ? 11 : 6}>
+									<td className="attendance-empty-state" colSpan={isAdmin ? 12 : 7}>
 										Chưa có dữ liệu chấm công.
 									</td>
 								</tr>
 							) : (
 								historyRows.map((item, index) => {
-									const attendanceStatusValue =
-										item.trang_thai_hien_tai || item.trang_thai || "-";
+									const attendanceStatusValue = normalizeVietnameseText(
+						item.trang_thai_hien_tai || item.trang_thai || "-"
+					);
 									return (
 									<tr key={item.id}>
 										{isAdmin ? (
@@ -561,6 +591,7 @@ function AttendancePage({
 												{attendanceStatusValue}
 											</span>
 										</td>
+										<td>{formatAttendanceType(item.loai_cham_cong)}</td>
 										<td>
 											<div className="attendance-report-cell">
 												{renderReportStatus(item.bao_cao_trang_thai)}

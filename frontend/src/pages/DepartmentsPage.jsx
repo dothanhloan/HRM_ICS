@@ -16,11 +16,16 @@ function DepartmentsPage({
 	departmentLeadersLoading,
 	departmentActionTarget,
 	departmentTransferId,
+	selectedDepartment,
+	departmentEmployees,
+	departmentEmployeesLoading,
+	departmentEmployeesStatus,
 	setDepartmentQuery,
 	setDepartmentPageSize,
 	setDepartmentForm,
 	setDepartmentTransferId,
 	fetchDepartments,
+	fetchDepartmentEmployees,
 	openCreateDepartment,
 	openEditDepartment,
 	submitDepartmentForm,
@@ -31,6 +36,16 @@ function DepartmentsPage({
 	useEffect(() => {
 		fetchDepartments(1);
 	}, []);
+
+	const selectedDepartmentId = selectedDepartment ? String(selectedDepartment.id) : "";
+
+	const formatCurrency = (value) => {
+		const amount = Number(value);
+		if (!Number.isFinite(amount)) {
+			return "-";
+		}
+		return amount.toLocaleString("vi-VN", { style: "currency", currency: "VND" });
+	};
 
 	const summaryStats = useMemo(() => {
 		const totalEmployees = departmentRows.reduce(
@@ -177,12 +192,25 @@ function DepartmentsPage({
 							</tr>
 						) : (
 							departmentRows.map((row) => (
-								<tr key={row.id}>
+								<tr
+									key={row.id}
+									className={selectedDepartmentId === String(row.id) ? "selected" : ""}
+									onClick={() => fetchDepartmentEmployees(row)}
+								>
 									<td>
 										<span className="data-emphasis">{row.id}</span>
 									</td>
 									<td>
-										<span className="data-chip">{row.ten_phong}</span>
+										<button
+											type="button"
+											className="link-button data-chip"
+											onClick={(event) => {
+												event.stopPropagation();
+												fetchDepartmentEmployees(row);
+											}}
+										>
+											{row.ten_phong}
+										</button>
 									</td>
 									<td>
 										<span className="data-chip muted">{row.truong_phong || "-"}</span>
@@ -246,6 +274,59 @@ function DepartmentsPage({
 					<option value={50}>50 / trang</option>
 				</select>
 			</div>
+
+			{selectedDepartment ? (
+				<div className="admin-table department-employees-table">
+					<div className="admin-section-header compact">
+						<div>
+							<h3>Nhân viên phòng ban {selectedDepartment.ten_phong}</h3>
+							<p>Tổng số: {departmentEmployees.length} nhân viên</p>
+						</div>
+					</div>
+					{departmentEmployeesStatus.message ? (
+						<div className={`alert ${departmentEmployeesStatus.type}`}>
+							{departmentEmployeesStatus.message}
+						</div>
+					) : null}
+					<table>
+						<thead>
+							<tr>
+								<th>Mã</th>
+								<th>Họ tên</th>
+								<th>Email</th>
+								<th>Số điện thoại</th>
+								<th>Chức vụ</th>
+								<th>Trạng thái</th>
+								<th>Lương cơ bản</th>
+							</tr>
+						</thead>
+						<tbody>
+							{departmentEmployeesLoading ? (
+								<tr>
+									<td colSpan="7">Đang tải danh sách nhân viên...</td>
+								</tr>
+							) : (
+								departmentEmployees.map((employee) => (
+									<tr key={employee.id}>
+										<td><span className="data-emphasis">{employee.id}</span></td>
+										<td>{employee.ho_ten || "-"}</td>
+										<td>{employee.email || "-"}</td>
+										<td>{employee.so_dien_thoai || "-"}</td>
+										<td>{employee.chuc_vu || "-"}</td>
+										<td><span className="data-chip muted">{employee.trang_thai_lam_viec || "-"}</span></td>
+										<td>{formatCurrency(employee.luong_co_ban)}</td>
+									</tr>
+								))
+							)}
+							{!departmentEmployeesLoading && departmentEmployees.length === 0 ? (
+								<tr>
+									<td colSpan="7">Không có nhân viên trong phòng ban này</td>
+								</tr>
+							) : null}
+						</tbody>
+					</table>
+				</div>
+			) : null}
 
 			{departmentActionTarget ? (
 				<div className="modal-backdrop">

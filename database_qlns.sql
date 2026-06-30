@@ -1,4 +1,4 @@
-CREATE DATABASE IF NOT EXISTS hrm_ics
+﻿CREATE DATABASE IF NOT EXISTS hrm_ics
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
@@ -21,7 +21,7 @@ CREATE TABLE `cham_cong` (
   `check_in` time DEFAULT NULL,
   `check_out` time DEFAULT NULL,
   `loai_cham_cong` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'office',
-  `trang_thai` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'Bình thường',
+  `trang_thai` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'BÃ¬nh thÆ°á»ng',
   PRIMARY KEY (`id`),
   UNIQUE KEY `nhan_vien_id` (`nhan_vien_id`,`ngay`),
   CONSTRAINT `cham_cong_ibfk_1` FOREIGN KEY (`nhan_vien_id`) REFERENCES `nhanvien` (`id`) ON DELETE CASCADE
@@ -34,11 +34,11 @@ CREATE TABLE `cong_viec` (
   `mo_ta` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `han_hoan_thanh` date DEFAULT NULL,
   `ngay_gia_han` date DEFAULT NULL,
-  `muc_do_uu_tien` enum('Thấp','Trung bình','Cao') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Trung bình',
+  `muc_do_uu_tien` enum('Tháº¥p','Trung bÃ¬nh','Cao') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Trung bÃ¬nh',
   `nguoi_giao_id` int DEFAULT NULL,
   `phong_ban_id` int DEFAULT NULL,
-  `trang_thai` enum('Chưa bắt đầu','Đang thực hiện','Đã hoàn thành','Trễ hạn') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Chưa bắt đầu',
-  `trang_thai_duyet` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Chưa duyệt',
+  `trang_thai` enum('ChÆ°a báº¯t Ä‘áº§u','Äang thá»±c hiá»‡n','ÄÃ£ hoÃ n thÃ nh','Trá»… háº¡n') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'ChÆ°a báº¯t Ä‘áº§u',
+  `trang_thai_duyet` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'ChÆ°a duyá»‡t',
   `ly_do_duyet` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `tai_lieu_cv` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `file_tai_lieu` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -85,12 +85,12 @@ CREATE TABLE `cong_viec_quy_trinh` (
   `cong_viec_id` int DEFAULT NULL,
   `ten_buoc` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `mo_ta` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `trang_thai` enum('Chưa bắt đầu','Đang thực hiện','Đã hoàn thành') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Chưa bắt đầu',
+  `trang_thai` enum('ChÆ°a báº¯t Ä‘áº§u','Äang thá»±c hiá»‡n','ÄÃ£ hoÃ n thÃ nh') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'ChÆ°a báº¯t Ä‘áº§u',
   `ngay_bat_dau` date DEFAULT NULL,
   `ngay_ket_thuc` date DEFAULT NULL,
   `ngay_tao` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `tai_lieu_link` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Link tài liệu',
-  `tai_lieu_file` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'File tài liệu đính kèm (nhiều file cách nhau bởi ;)',
+  `tai_lieu_link` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Link tÃ i liá»‡u',
+  `tai_lieu_file` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'File tÃ i liá»‡u Ä‘Ã­nh kÃ¨m (nhiá»u file cÃ¡ch nhau bá»Ÿi ;)',
   PRIMARY KEY (`id`),
   KEY `cong_viec_id` (`cong_viec_id`),
   CONSTRAINT `cong_viec_quy_trinh_ibfk_1` FOREIGN KEY (`cong_viec_id`) REFERENCES `cong_viec` (`id`) ON DELETE CASCADE
@@ -108,19 +108,19 @@ CREATE TABLE `cong_viec_tien_do` (
 
 CREATE TABLE `don_nghi_phep` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `nhan_vien_id` int NOT NULL COMMENT 'ID nhân viên gửi đơn',
-  `loai_phep` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Loại nghỉ phép: Phép năm, Phép không lương, Nghỉ ốm, Nghỉ thai sản, Nghỉ việc riêng, Khác',
-  `ngay_bat_dau` date NOT NULL COMMENT 'Ngày bắt đầu nghỉ',
-  `ngay_ket_thuc` date NOT NULL COMMENT 'Ngày kết thúc nghỉ',
-  `so_ngay` decimal(4,1) NOT NULL COMMENT 'Số ngày nghỉ (có thể 0.5 cho nửa ngày)',
-  `ly_do` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Lý do xin nghỉ',
-  `trang_thai` enum('cho_duyet','da_duyet','tu_choi') COLLATE utf8mb4_unicode_ci DEFAULT 'cho_duyet' COMMENT 'Trạng thái đơn',
-  `ly_do_tu_choi` text COLLATE utf8mb4_unicode_ci COMMENT 'Lý do từ chối (nếu có)',
-  `nguoi_duyet_id` int DEFAULT NULL COMMENT 'ID người duyệt đơn',
-  `nguoi_tao_id` int DEFAULT NULL COMMENT 'ID người tạo đơn (nếu admin tạo hộ)',
-  `thoi_gian_tao` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời gian tạo đơn',
-  `thoi_gian_duyet` timestamp NULL DEFAULT NULL COMMENT 'Thời gian duyệt/từ chối',
-  `ghi_chu` text COLLATE utf8mb4_unicode_ci COMMENT 'Ghi chú thêm',
+  `nhan_vien_id` int NOT NULL COMMENT 'ID nhÃ¢n viÃªn gá»­i Ä‘Æ¡n',
+  `loai_phep` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Loáº¡i nghá»‰ phÃ©p: PhÃ©p nÄƒm, PhÃ©p khÃ´ng lÆ°Æ¡ng, Nghá»‰ á»‘m, Nghá»‰ thai sáº£n, Nghá»‰ viá»‡c riÃªng, KhÃ¡c',
+  `ngay_bat_dau` date NOT NULL COMMENT 'NgÃ y báº¯t Ä‘áº§u nghá»‰',
+  `ngay_ket_thuc` date NOT NULL COMMENT 'NgÃ y káº¿t thÃºc nghá»‰',
+  `so_ngay` decimal(4,1) NOT NULL COMMENT 'Sá»‘ ngÃ y nghá»‰ (cÃ³ thá»ƒ 0.5 cho ná»­a ngÃ y)',
+  `ly_do` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'LÃ½ do xin nghá»‰',
+  `trang_thai` enum('cho_duyet','da_duyet','tu_choi') COLLATE utf8mb4_unicode_ci DEFAULT 'cho_duyet' COMMENT 'Tráº¡ng thÃ¡i Ä‘Æ¡n',
+  `ly_do_tu_choi` text COLLATE utf8mb4_unicode_ci COMMENT 'LÃ½ do tá»« chá»‘i (náº¿u cÃ³)',
+  `nguoi_duyet_id` int DEFAULT NULL COMMENT 'ID ngÆ°á»i duyá»‡t Ä‘Æ¡n',
+  `nguoi_tao_id` int DEFAULT NULL COMMENT 'ID ngÆ°á»i táº¡o Ä‘Æ¡n (náº¿u admin táº¡o há»™)',
+  `thoi_gian_tao` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thá»i gian táº¡o Ä‘Æ¡n',
+  `thoi_gian_duyet` timestamp NULL DEFAULT NULL COMMENT 'Thá»i gian duyá»‡t/tá»« chá»‘i',
+  `ghi_chu` text COLLATE utf8mb4_unicode_ci COMMENT 'Ghi chÃº thÃªm',
   PRIMARY KEY (`id`),
   KEY `idx_nhan_vien_id` (`nhan_vien_id`),
   KEY `idx_trang_thai` (`trang_thai`),
@@ -165,9 +165,9 @@ CREATE TABLE `lich_su_cong_phep` (
   `id` int NOT NULL AUTO_INCREMENT,
   `nhan_vien_id` int NOT NULL,
   `nam` int NOT NULL,
-  `thang` int DEFAULT NULL COMMENT 'NULL = cộng đầu năm, có giá trị = cộng theo tháng',
-  `so_ngay_cong` decimal(4,1) NOT NULL COMMENT 'Số ngày phép được cộng',
-  `loai_cong` enum('dau_nam','hang_thang') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Loại cộng phép',
+  `thang` int DEFAULT NULL COMMENT 'NULL = cá»™ng Ä‘áº§u nÄƒm, cÃ³ giÃ¡ trá»‹ = cá»™ng theo thÃ¡ng',
+  `so_ngay_cong` decimal(4,1) NOT NULL COMMENT 'Sá»‘ ngÃ y phÃ©p Ä‘Æ°á»£c cá»™ng',
+  `loai_cong` enum('dau_nam','hang_thang') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Loáº¡i cá»™ng phÃ©p',
   `ly_do` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `ngay_cong` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -188,7 +188,7 @@ CREATE TABLE `luong` (
   `thue` decimal(12,2) DEFAULT '0.00',
   `luong_thuc_te` decimal(12,2) DEFAULT NULL,
   `ghi_chu` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `trang_thai` enum('Chưa trả','Đã trả') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Chưa trả',
+  `trang_thai` enum('ChÆ°a tráº£','ÄÃ£ tráº£') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'ChÆ°a tráº£',
   `ngay_tra_luong` date DEFAULT NULL,
   `ngay_tao` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -233,10 +233,10 @@ CREATE TABLE `luu_kpi` (
 
 CREATE TABLE `ngay_nghi_le` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `ten_ngay_le` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Tên ngày lễ',
-  `ngay_bat_dau` date NOT NULL COMMENT 'Ngày bắt đầu nghỉ lễ',
-  `ngay_ket_thuc` date NOT NULL COMMENT 'Ngày kết thúc nghỉ lễ',
-  `lap_lai_hang_nam` tinyint(1) DEFAULT '0' COMMENT '1 = lặp lại hàng năm (Tết, Quốc khánh...)',
+  `ten_ngay_le` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'TÃªn ngÃ y lá»…',
+  `ngay_bat_dau` date NOT NULL COMMENT 'NgÃ y báº¯t Ä‘áº§u nghá»‰ lá»…',
+  `ngay_ket_thuc` date NOT NULL COMMENT 'NgÃ y káº¿t thÃºc nghá»‰ lá»…',
+  `lap_lai_hang_nam` tinyint(1) DEFAULT '0' COMMENT '1 = láº·p láº¡i hÃ ng nÄƒm (Táº¿t, Quá»‘c khÃ¡nh...)',
   `ngay_tao` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_ngay_bat_dau` (`ngay_bat_dau`),
@@ -246,12 +246,12 @@ CREATE TABLE `ngay_nghi_le` (
 CREATE TABLE `ngay_phep_nam` (
   `id` int NOT NULL AUTO_INCREMENT,
   `nhan_vien_id` int NOT NULL,
-  `nam` int NOT NULL COMMENT 'Năm',
-  `tong_ngay_phep` decimal(4,1) DEFAULT '12.0' COMMENT 'Tổng số ngày phép được cấp',
-  `ngay_phep_da_dung` decimal(4,1) DEFAULT '0.0' COMMENT 'Số ngày đã sử dụng',
-  `ngay_phep_con_lai` decimal(4,1) DEFAULT '12.0' COMMENT 'Số ngày còn lại',
-  `ngay_phep_nam_truoc` decimal(4,1) DEFAULT '0.0' COMMENT 'Số ngày phép năm trước chuyển sang',
-  `da_cong_phep_dau_nam` tinyint(1) DEFAULT '0' COMMENT '1 = Đã cộng 12 ngày đầu năm, không cộng hàng tháng nữa',
+  `nam` int NOT NULL COMMENT 'NÄƒm',
+  `tong_ngay_phep` decimal(4,1) DEFAULT '12.0' COMMENT 'Tá»•ng sá»‘ ngÃ y phÃ©p Ä‘Æ°á»£c cáº¥p',
+  `ngay_phep_da_dung` decimal(4,1) DEFAULT '0.0' COMMENT 'Sá»‘ ngÃ y Ä‘Ã£ sá»­ dá»¥ng',
+  `ngay_phep_con_lai` decimal(4,1) DEFAULT '12.0' COMMENT 'Sá»‘ ngÃ y cÃ²n láº¡i',
+  `ngay_phep_nam_truoc` decimal(4,1) DEFAULT '0.0' COMMENT 'Sá»‘ ngÃ y phÃ©p nÄƒm trÆ°á»›c chuyá»ƒn sang',
+  `da_cong_phep_dau_nam` tinyint(1) DEFAULT '0' COMMENT '1 = ÄÃ£ cá»™ng 12 ngÃ y Ä‘áº§u nÄƒm, khÃ´ng cá»™ng hÃ ng thÃ¡ng ná»¯a',
   `ngay_cap_nhat` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_nhanvien_nam` (`nhan_vien_id`,`nam`),
@@ -274,6 +274,28 @@ CREATE TABLE `nhan_su_lich_su` (
   CONSTRAINT `nhan_su_lich_su_ibfk_2` FOREIGN KEY (`nguoi_thay_doi_id`) REFERENCES `nhanvien` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `nhanvien` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `ho_ten` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `email` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `mat_khau` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `so_dien_thoai` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `gioi_tinh` enum('Nam','Ná»¯','KhÃ¡c') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ngay_sinh` date DEFAULT NULL,
+  `phong_ban_id` int DEFAULT NULL,
+  `chuc_vu` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `luong_co_ban` decimal(12,2) DEFAULT '0.00',
+  `trang_thai_lam_viec` enum('Äang lÃ m','Táº¡m nghá»‰','Nghá»‰ viá»‡c') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Äang lÃ m',
+  `vai_tro` enum('Admin','Quáº£n lÃ½','NhÃ¢n viÃªn') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'NhÃ¢n viÃªn',
+  `ngay_vao_lam` date DEFAULT NULL,
+  `avatar_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ngay_tao` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`),
+  KEY `phong_ban_id` (`phong_ban_id`),
+  CONSTRAINT `nhanvien_ibfk_1` FOREIGN KEY (`phong_ban_id`) REFERENCES `phong_ban` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=36 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `nhanvien_quyen` (
   `nhanvien_id` int NOT NULL,
   `quyen_id` int NOT NULL,
@@ -283,7 +305,7 @@ CREATE TABLE `nhanvien_quyen` (
 
 CREATE TABLE `phan_quyen_chuc_nang` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `vai_tro` enum('Admin','Quản lý','Nhân viên','Trưởng nhóm','Nhân viên cấp cao') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vai_tro` enum('Admin','Quáº£n lÃ½','NhÃ¢n viÃªn','TrÆ°á»Ÿng nhÃ³m','NhÃ¢n viÃªn cáº¥p cao') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `chuc_nang` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `co_quyen` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`id`)

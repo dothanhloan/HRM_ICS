@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 function EmployeesPage({
+	apiBase,
+	user,
 	employeeRows,
 	employeeTotal,
 	employeeQuery,
@@ -37,6 +39,9 @@ function EmployeesPage({
 	const [departmentFilter, setDepartmentFilter] = useState("");
 	const [statusFilter, setStatusFilter] = useState("");
 	const [roleFilter, setRoleFilter] = useState("");
+	const [employeeHistory, setEmployeeHistory] = useState([]);
+	const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
+	const [employeeHistoryError, setEmployeeHistoryError] = useState("");
 
 	const permissionGroups = useMemo(() => {
 		return employeePermissions.reduce((groups, permission) => {
@@ -167,6 +172,40 @@ function EmployeesPage({
 		);
 	};
 
+
+	const formatHistoryTime = (value) => {
+		if (!value) {
+			return "-";
+		}
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) {
+			return String(value);
+		}
+		return date.toLocaleString("vi-VN");
+	};
+
+	const fetchEmployeeHistory = async (employeeId) => {
+		if (!apiBase || !employeeId) {
+			setEmployeeHistory([]);
+			return;
+		}
+		setEmployeeHistoryLoading(true);
+		setEmployeeHistoryError("");
+		try {
+			const response = await fetch(`${apiBase}/api/v1/nhanvien/${employeeId}/lich_su?limit=50`);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Không thể tải lịch sử thay đổi");
+			}
+			setEmployeeHistory(data.data || []);
+		} catch (error) {
+			setEmployeeHistory([]);
+			setEmployeeHistoryError(error.message);
+		} finally {
+			setEmployeeHistoryLoading(false);
+		}
+	};
+
 	const openViewEmployee = (row) => {
 		setEmployeeEditingId(row.id);
 		setEmployeeForm({
@@ -187,6 +226,7 @@ function EmployeesPage({
 		});
 		fetchEmployeeDepartments();
 		fetchEmployeePermissions();
+		fetchEmployeeHistory(row.id);
 		setViewEmployee(row);
 	};
 	useEffect(() => {
@@ -649,7 +689,10 @@ function EmployeesPage({
 							<button
 								type="button"
 								className="ghost"
-								onClick={() => setViewEmployee(null)}
+								onClick={() => {
+									setViewEmployee(null);
+									setEmployeeHistory([]);
+								}}
 							>
 								Đóng
 							</button>
@@ -840,12 +883,43 @@ function EmployeesPage({
 								/>
 							</div>
 						</div>
+
+						<div className="employee-history-panel">
+							<div className="admin-section-header compact">
+								<div>
+									<h3>Lịch sử thay đổi</h3>
+									<p>Theo dõi các cập nhật gần nhất của hồ sơ nhân sự.</p>
+								</div>
+							</div>
+							{employeeHistoryLoading ? <p>Đang tải lịch sử...</p> : null}
+							{employeeHistoryError ? <div className="alert error">{employeeHistoryError}</div> : null}
+							{!employeeHistoryLoading && !employeeHistoryError && employeeHistory.length === 0 ? (
+								<p>Chưa có lịch sử thay đổi.</p>
+							) : null}
+							{employeeHistory.length > 0 ? (
+								<div className="employee-history-list">
+									{employeeHistory.map((item) => (
+										<div key={item.id} className="employee-history-item">
+											<div>
+												<strong>{item.ghi_chu || item.ten_thay_doi || item.loai_thay_doi}</strong>
+												<span>{formatHistoryTime(item.thoi_gian)}</span>
+											</div>
+											<p>
+												{item.gia_tri_cu || "-"} → {item.gia_tri_moi || "-"}
+											</p>
+											<small>Người thay đổi: {item.nguoi_thay_doi_ten || (item.nguoi_thay_doi_id ? `#${item.nguoi_thay_doi_id}` : "Hệ thống")}</small>
+										</div>
+									))}
+								</div>
+							) : null}
+						</div>
 						<div className="form-actions">
 							<button
 								type="button"
 								onClick={async () => {
 									await submitEmployeeForm();
 									setViewEmployee(null);
+									setEmployeeHistory([]);
 								}}
 							>
 								Lưu cập nhật
@@ -853,7 +927,10 @@ function EmployeesPage({
 							<button
 								type="button"
 								className="ghost"
-								onClick={() => setViewEmployee(null)}
+								onClick={() => {
+									setViewEmployee(null);
+									setEmployeeHistory([]);
+								}}
 							>
 								Hủy
 							</button>

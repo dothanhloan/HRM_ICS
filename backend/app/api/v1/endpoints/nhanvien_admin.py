@@ -6,6 +6,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.security import hash_password
 
 router = APIRouter(prefix="/nhanvien", tags=["nhanvien"])
 
@@ -62,6 +63,83 @@ def sync_employee_permissions(db: Session, nhanvien_id: int, quyen_ids: Optional
             ),
             {"nhanvien_id": nhanvien_id, "quyen_id": quyen_id},
         )
+
+AUDIT_FIELD_LABELS = {
+    "ho_ten": "Họ tên",
+    "email": "Email",
+    "mat_khau": "Mật khẩu",
+    "so_dien_thoai": "Số điện thoại",
+    "gioi_tinh": "Giới tính",
+    "ngay_sinh": "Ngày sinh",
+    "phong_ban_id": "Phòng ban",
+    "chuc_vu": "Chức vụ",
+    "luong_co_ban": "Lương cơ bản",
+    "trang_thai_lam_viec": "Trạng thái làm việc",
+    "vai_tro": "Vai trò",
+    "ngay_vao_lam": "Ngày vào làm",
+    "avatar_url": "Avatar",
+    "quyen_ids": "Nhóm quyền",
+    "tao_moi": "Tạo mới hồ sơ",
+}
+
+def _stringify_audit_value(value: Optional[object]) -> Optional[str]:
+    if value is None:
+        return None
+    return str(value)
+
+def _audit_actor_id(actor: str, nhanvien_id: int, actor_id: Optional[int] = None) -> Optional[int]:
+    if actor_id:
+        return actor_id
+    if actor.lower() == "employee":
+        return nhanvien_id
+    return None
+
+def insert_employee_history(
+    db: Session,
+    nhanvien_id: int,
+    loai_thay_doi: str,
+    gia_tri_cu: Optional[object],
+    gia_tri_moi: Optional[object],
+    nguoi_thay_doi_id: Optional[int] = None,
+    ghi_chu: Optional[str] = None,
+) -> None:
+    db.execute(
+        text(
+            """
+            INSERT INTO nhan_su_lich_su (
+              nhan_vien_id, loai_thay_doi, gia_tri_cu, gia_tri_moi, nguoi_thay_doi_id, ghi_chu
+            ) VALUES (
+              :nhan_vien_id, :loai_thay_doi, :gia_tri_cu, :gia_tri_moi, :nguoi_thay_doi_id, :ghi_chu
+            )
+            """
+        ),
+        {
+            "nhan_vien_id": nhanvien_id,
+            "loai_thay_doi": loai_thay_doi,
+            "gia_tri_cu": _stringify_audit_value(gia_tri_cu),
+            "gia_tri_moi": _stringify_audit_value(gia_tri_moi),
+            "nguoi_thay_doi_id": nguoi_thay_doi_id,
+            "ghi_chu": ghi_chu,
+        },
+    )
+
+def format_permission_ids(db: Session, quyen_ids: Optional[list[int]]) -> str:
+    ids = sorted({int(quyen_id) for quyen_id in (quyen_ids or [])})
+    if not ids:
+        return ""
+    rows = db.execute(
+        text(
+            """
+            SELECT id, COALESCE(ten_quyen, ma_quyen) AS ten_quyen
+            FROM quyen
+            WHERE id IN :ids
+            ORDER BY id
+            """
+        ).bindparams(bindparam("ids", expanding=True)),
+        {"ids": ids},
+    ).mappings().all()
+    name_map = {row["id"]: row["ten_quyen"] for row in rows}
+    return ", ".join(name_map.get(quyen_id, str(quyen_id)) for quyen_id in ids)
 
 
 class NhanVienCreate(BaseModel):
@@ -175,7 +253,11 @@ def list_nhanvien(
 
 
 @router.post("/")
-def create_nhanvien(payload: NhanVienCreate, db: Session = Depends(get_db)) -> dict:
+def create_nhanvien(
+    payload: NhanVienCreate,
+    actor_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+) -> dict:
     if not payload.ho_ten.strip() or not payload.email.strip() or not payload.mat_khau.strip():
         raise HTTPException(status_code=400, detail="Missing required fields")
 
@@ -201,7 +283,7 @@ def create_nhanvien(payload: NhanVienCreate, db: Session = Depends(get_db)) -> d
     params = payload.model_dump(exclude={"quyen_ids"})
     params["ho_ten"] = params["ho_ten"].strip()
     params["email"] = params["email"].strip()
-    params["mat_khau"] = params["mat_khau"].strip()
+    params["mat_khau"] = hash_password(params["mat_khau"].strip())
 
     for key in [
         "so_dien_thoai",
@@ -221,6 +303,15 @@ def create_nhanvien(payload: NhanVienCreate, db: Session = Depends(get_db)) -> d
     db.execute(query, params)
     nhanvien_id = db.execute(text("SELECT LAST_INSERT_ID()" )).scalar()
     sync_employee_permissions(db, int(nhanvien_id), payload.quyen_ids)
+    insert_employee_history(
+        db,
+        int(nhanvien_id),
+        "tao_moi",
+        None,
+        params["ho_ten"],
+        actor_id,
+        "Tạo mới hồ sơ nhân sự",
+    )
     db.commit()
 
     row = db.execute(
@@ -245,6 +336,7 @@ def update_nhanvien(
     nhanvien_id: int,
     payload: NhanVienUpdate,
     actor: str = "admin",
+    actor_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ) -> dict:
     allowed_fields = {
@@ -263,21 +355,31 @@ def update_nhanvien(
         "avatar_url",
     }
     if actor.lower() == "employee":
-        allowed_fields = {"ho_ten", "so_dien_thoai", "ngay_sinh", "gioi_tinh"}
+        allowed_fields = {"ho_ten", "so_dien_thoai", "ngay_sinh", "gioi_tinh", "avatar_url"}
 
-    payload_data = payload.model_dump()
-    data = {k: v for k, v in payload_data.items() if v is not None and k in allowed_fields}
+    payload_data = payload.model_dump(exclude_unset=True)
+    data = {k: v for k, v in payload_data.items() if k in allowed_fields}
     for key in list(data.keys()):
         data[key] = normalize_optional(data[key])
-        if data[key] is None:
-            del data[key]
 
-    can_sync_permissions = actor.lower() != "employee" and payload_data.get("quyen_ids") is not None
+    can_sync_permissions = actor.lower() != "employee" and "quyen_ids" in payload_data
     if not data and not can_sync_permissions:
         raise HTTPException(status_code=400, detail="No fields to update")
 
     if data.get("gioi_tinh") and data["gioi_tinh"] not in GIOI_TINH_ALLOWED:
         raise HTTPException(status_code=400, detail="Invalid gioi_tinh")
+
+    if "mat_khau" in data:
+        if not data["mat_khau"]:
+            raise HTTPException(status_code=400, detail="Missing password")
+        data["mat_khau"] = hash_password(str(data["mat_khau"]))
+
+    old_row = db.execute(
+        text("SELECT * FROM nhanvien WHERE id = :id"),
+        {"id": nhanvien_id},
+    ).mappings().first()
+    if not old_row:
+        raise HTTPException(status_code=404, detail="Not found")
 
     if "email" in data:
         exists = db.execute(
@@ -287,12 +389,32 @@ def update_nhanvien(
         if exists:
             raise HTTPException(status_code=400, detail="Email already exists")
 
+    changed_fields = []
+    for key, value in data.items():
+        if _stringify_audit_value(old_row[key]) != _stringify_audit_value(value):
+            changed_fields.append((key, old_row[key], value))
+
     if data:
         set_clause = ", ".join([f"{key} = :{key}" for key in data.keys()])
         data["id"] = nhanvien_id
         db.execute(text(f"UPDATE nhanvien SET {set_clause} WHERE id = :id"), data)
     if can_sync_permissions:
+        old_permissions = fetch_permission_ids(db, [nhanvien_id]).get(nhanvien_id, [])
+        old_permissions_text = format_permission_ids(db, old_permissions)
+        new_permissions_text = format_permission_ids(db, payload.quyen_ids)
         sync_employee_permissions(db, nhanvien_id, payload.quyen_ids)
+        if old_permissions_text != new_permissions_text:
+            changed_fields.append(("quyen_ids", old_permissions_text, new_permissions_text))
+    for key, old_value, new_value in changed_fields:
+        insert_employee_history(
+            db,
+            nhanvien_id,
+            key,
+            "********" if key == "mat_khau" and old_value else old_value,
+            "********" if key == "mat_khau" and new_value else new_value,
+            _audit_actor_id(actor, nhanvien_id, actor_id),
+            f"Cập nhật {AUDIT_FIELD_LABELS.get(key, key)}",
+        )
     db.commit()
 
     row = db.execute(
@@ -312,12 +434,49 @@ def update_nhanvien(
     return {"data": item}
 
 
+@router.get("/{nhanvien_id}/lich_su")
+def list_nhanvien_history(
+    nhanvien_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = db.execute(
+        text(
+            """
+            SELECT
+              h.id,
+              h.nhan_vien_id,
+              h.loai_thay_doi,
+              h.gia_tri_cu,
+              h.gia_tri_moi,
+              h.nguoi_thay_doi_id,
+              h.ghi_chu,
+              h.thoi_gian,
+              nv.ho_ten AS nguoi_thay_doi_ten
+            FROM nhan_su_lich_su h
+            LEFT JOIN nhanvien nv ON nv.id = h.nguoi_thay_doi_id
+            WHERE h.nhan_vien_id = :id
+            ORDER BY h.thoi_gian DESC, h.id DESC
+            LIMIT :limit
+            """
+        ),
+        {"id": nhanvien_id, "limit": limit},
+    ).mappings().all()
+    items = [dict(row) for row in rows]
+    for item in items:
+        item["ten_thay_doi"] = AUDIT_FIELD_LABELS.get(item["loai_thay_doi"], item["loai_thay_doi"])
+    return {"data": items}
+
 @router.delete("/{nhanvien_id}")
-def delete_nhanvien(nhanvien_id: int, db: Session = Depends(get_db)) -> dict:
+def delete_nhanvien(
+    nhanvien_id: int,
+    actor_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+) -> dict:
     row = db.execute(
-        text("SELECT id FROM nhanvien WHERE id = :id"),
+        text("SELECT id, trang_thai_lam_viec FROM nhanvien WHERE id = :id"),
         {"id": nhanvien_id},
-    ).first()
+    ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Not found")
 
@@ -325,6 +484,16 @@ def delete_nhanvien(nhanvien_id: int, db: Session = Depends(get_db)) -> dict:
         text("UPDATE nhanvien SET trang_thai_lam_viec = 'Nghỉ việc' WHERE id = :id"),
         {"id": nhanvien_id},
     )
+    if row["trang_thai_lam_viec"] != "Nghỉ việc":
+        insert_employee_history(
+            db,
+            nhanvien_id,
+            "trang_thai_lam_viec",
+            row["trang_thai_lam_viec"],
+            "Nghỉ việc",
+            actor_id,
+            "Chuyển trạng thái nghỉ việc",
+        )
     db.commit()
 
     return {"status": "ok"}

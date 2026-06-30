@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import logo from "../assets/logo.jpg";
 
 function LoginPage({
@@ -8,13 +8,15 @@ function LoginPage({
 	loading,
 	onIdentifierChange,
 	onPasswordChange,
+	rememberLogin,
+	onRememberLoginChange,
 	onSubmit,
 }) {
 	const [modalType, setModalType] = useState("");
+	const [showPassword, setShowPassword] = useState(false);
 
 	const closeModal = () => setModalType("");
 	const openCulture = () => setModalType("culture");
-	const openGuide = () => setModalType("guide");
 
 	return (
 		<div className="login-page">
@@ -23,11 +25,7 @@ function LoginPage({
 					<div className="login-card-left">
 						<div className="login-logo">
 							<div className="logo-mark">
-								<img
-									className="logo-image"
-									src={logo}
-									alt="ICS Cyber Security"
-								/>
+								<img className="logo-image" src={logo} alt="ICS Cyber Security" />
 							</div>
 							<p className="logo-text">CYBER SECURITY</p>
 						</div>
@@ -35,22 +33,18 @@ function LoginPage({
 							<button type="button" className="link-button" onClick={openCulture}>
 								Văn hóa doanh nghiệp ICS
 							</button>
-							<button type="button" className="link-button" onClick={openGuide}>
-								Hướng dẫn sử dụng Website
-							</button>
 						</div>
 					</div>
 					<div className="login-card-right">
 						<div className="login-heading">
-							<p className="login-tagline">Mùa hè vẫy gọi tới ICS</p>
-							<h1>Chào mừng bạn trở lại</h1>
+							<h1>Đăng nhập hệ thống</h1>
 							<p className="login-subtitle">
-								Hãy đăng nhập để tiếp tục công việc hôm nay.
+								Sử dụng tài khoản ICS của bạn để tiếp tục công việc hôm nay.
 							</p>
 						</div>
 						<form className="login-form" onSubmit={onSubmit}>
 							<div className="form-group">
-								<label htmlFor="identifier">Email</label>
+								<label htmlFor="identifier" className="field-label"><span>✉</span>Email</label>
 								<div className="input-shell">
 									<input
 										id="identifier"
@@ -62,28 +56,35 @@ function LoginPage({
 								</div>
 							</div>
 							<div className="form-group">
-								<label htmlFor="password">Password</label>
+								<label htmlFor="password" className="field-label"><span>🔒</span>Password</label>
 								<div className="input-shell">
 									<input
 										id="password"
-										type="password"
+										type={showPassword ? "text" : "password"}
 										placeholder="Nhập mật khẩu"
 										value={password}
 										onChange={(event) => onPasswordChange(event.target.value)}
 									/>
+									<button
+										type="button"
+										className="password-toggle"
+										onClick={() => setShowPassword((current) => !current)}
+										aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+									>
+										{showPassword ? "🙈" : "👁"}
+									</button>
 								</div>
 							</div>
-							{status.message ? (
-								<div className={`alert ${status.type}`}>{status.message}</div>
-							) : null}
+							{status.message ? <div className={`alert ${status.type}`}>{status.message}</div> : null}
 							<div className="login-row">
 								<label className="checkbox">
-									<input type="checkbox" />
+									<input
+										type="checkbox"
+										checked={rememberLogin}
+										onChange={(event) => onRememberLoginChange(event.target.checked)}
+									/>
 									<span>Ghi nhớ đăng nhập</span>
 								</label>
-								<a className="helper-link" href="#">
-									Quên mật khẩu?
-								</a>
 							</div>
 							<button className="login-submit" type="submit" disabled={loading}>
 								{loading ? "Đang xử lý..." : "Đăng nhập"}
@@ -91,48 +92,21 @@ function LoginPage({
 						</form>
 					</div>
 				</section>
-				{modalType ? (
+				{modalType === "culture" ? (
 					<div className="modal-backdrop" onClick={closeModal}>
 						<div className="modal login-modal" onClick={(event) => event.stopPropagation()}>
 							<div className="modal-header">
-								<h2>
-									{modalType === "culture"
-										? "Văn hóa ICS – Nội quy cơ bản"
-										: "Hướng dẫn sử dụng Website"}
-								</h2>
-								<button type="button" className="modal-close" onClick={closeModal}>
-									Đóng
-								</button>
+								<h2>Văn hóa ICS – Nội quy cơ bản</h2>
+								<button type="button" className="modal-close" onClick={closeModal}>Đóng</button>
 							</div>
-							{modalType === "culture" ? (
-								<div className="modal-body">
-									<ol>
-										<li>
-											<strong>Giờ giấc làm việc:</strong> Làm việc từ Thứ 2 – Thứ 6,
-											thời gian: 08h00 – 17h00 (nghỉ trưa 12h00 – 13h00).
-											Có mặt đúng giờ, hạn chế đi muộn hoặc về sớm.
-										</li>
-										<li>
-											<strong>Trang phục:</strong> Ăn mặc lịch sự, gọn gàng; ưu tiên
-											áo sơ mi, áo polo, quần/váy công sở.
-										</li>
-										<li>
-											<strong>Tác phong:</strong> Giao tiếp văn minh, tôn trọng đồng
-											nghiệp và khách hàng. Thái độ chủ động, trách nhiệm.
-										</li>
-										<li>
-											<strong>An ninh – Bảo mật:</strong> Không chia sẻ thông tin nội bộ
-											ra ngoài khi chưa được phép. Tuân thủ nghiêm ngặt quy định ATTT.
-										</li>
-									</ol>
-								</div>
-							) : (
-								<div className="modal-body">
-									<div className="video-placeholder">
-										<p>Video hướng dẫn sẽ được cập nhật tại đây.</p>
-									</div>
-								</div>
-							)}
+							<div className="modal-body">
+								<ol>
+									<li><strong>Giờ giấc làm việc:</strong> Làm việc từ Thứ 2 – Thứ 6, 08h00 – 17h00.</li>
+									<li><strong>Trang phục:</strong> Ăn mặc lịch sự, gọn gàng; ưu tiên áo sơ mi, áo polo.</li>
+									<li><strong>Tác phong:</strong> Giao tiếp văn minh, tôn trọng đồng nghiệp và khách hàng.</li>
+									<li><strong>An ninh – Bảo mật:</strong> Không chia sẻ thông tin nội bộ khi chưa được phép.</li>
+								</ol>
+							</div>
 						</div>
 					</div>
 				) : null}
