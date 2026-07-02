@@ -17,7 +17,6 @@ function TasksPage({
 	taskFormOpen,
 	taskFormStatus,
 	taskAssignees,
-	taskFollowers,
 	taskEmployees,
 	taskProjects,
 	taskProjectsLoading,
@@ -31,14 +30,12 @@ function TasksPage({
 	setTaskFormOpen,
 	setTaskForm,
 	setTaskAssignees,
-	setTaskFollowers,
 	resetTaskForm,
 	fetchTasks,
 	fetchTaskEmployees,
 	fetchTaskProjects,
 	openCreateTask,
 	toggleAssignee,
-	toggleFollower,
 	handleTaskUploadChange,
 	submitTaskForm,
 	setTaskPageSize,
@@ -254,10 +251,10 @@ function TasksPage({
 		return leadId ? String(leadId) === String(user.id) : false;
 	}, [selectedProject, user?.id]);
 
-	const canAssignOthers = isProjectLead;
+	const canAssignOthers = isAdmin || isProjectLead;
 	const isCreatingTask = taskFormOpen && !taskEditingId;
 	const canSelectTaskAssignee = canAssignOthers;
-	const canSaveTask = !taskProjectsLoading && !taskEmployeesLoading && (!isCreatingTask || isProjectLead);
+	const canSaveTask = !taskProjectsLoading && !taskEmployeesLoading && (!isCreatingTask || isAdmin || isProjectLead);
 	const isPendingApproval = useMemo(() => {
 		const normalize = (value) =>
 			String(value || "")
@@ -457,22 +454,10 @@ function TasksPage({
 							</div>
 								<div className="form-group">
 									<label>Người giao</label>
-									<select
-										value={taskForm.nguoi_giao_id}
-										onChange={(event) =>
-											setTaskForm({
-												...taskForm,
-												nguoi_giao_id: event.target.value,
-											})
-										}
-									>
-										<option value="">Chọn người giao</option>
-										{taskEmployees.map((employee) => (
-											<option key={employee.id} value={employee.id}>
-												{employee.ho_ten}
-											</option>
-										))}
-									</select>
+									<input
+										value={user?.ho_ten || user?.email || "Người dùng hiện tại"}
+										readOnly
+									/>
 								</div>
 							<div className="form-group">
 								<label>Ngày bắt đầu *</label>
@@ -571,21 +556,6 @@ function TasksPage({
 									</p>
 								</div>
 							)}
-						</div>
-						<div className="task-member-block">
-							<label>Người theo dõi</label>
-							<div className="task-member-list">
-								{taskEmployees.map((employee) => (
-									<label key={employee.id} className="task-member-item">
-										<input
-											type="checkbox"
-											checked={taskFollowers.includes(employee.id)}
-											onChange={() => toggleFollower(employee.id)}
-										/>
-										<span>{employee.ho_ten}</span>
-									</label>
-								))}
-							</div>
 						</div>
 							
 						{taskProjectsLoading || taskEmployeesLoading ? (
@@ -795,25 +765,13 @@ function TasksPage({
 											} 
 										/>
 									</div>
-									<div className="form-group">
-										<label>Người giao</label>
-										<select
-											value={taskForm.nguoi_giao_id}
-											onChange={(event) =>
-												setTaskForm({
-													...taskForm,
-													nguoi_giao_id: event.target.value,
-												})
-											}
-										>
-											<option value="">Chọn người giao</option>
-											{taskEmployees.map((employee) => (
-												<option key={employee.id} value={employee.id}>
-													{employee.ho_ten}
-												</option>
-											))}
-										</select>
-									</div>
+										<div className="form-group">
+											<label>Người giao</label>
+											<input
+												value={user?.ho_ten || user?.email || "Người dùng hiện tại"}
+												readOnly
+											/>
+										</div>
 									<div className="form-group">
 										<label>Phòng ban</label>
 										<input 
@@ -857,10 +815,6 @@ function TasksPage({
 												<span className="pill-placeholder">Chưa có người nhận</span>
 											)}
 										</div>
-									</div>
-									<div className="form-group full">
-										<label>Người theo dõi</label>
-										<div className="follower-placeholder">Thêm người theo dõi</div>
 									</div>
 									<div className="form-group full">
 										<label>Tài liệu công việc (Link Driver)</label>

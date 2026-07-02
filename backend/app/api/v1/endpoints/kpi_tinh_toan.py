@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.services.hrm_access import has_permission_group
+
 from app.api.deps import get_db
 from app.services.kpi_service import calculate_kpi, list_kpi_records, run_kpi_period
 
@@ -31,7 +33,7 @@ class KpiChayThangPayload(BaseModel):
 @router.post("/tinh_toan")
 def tinh_toan_kpi(payload: KpiTinhToanPayload, db: Session = Depends(get_db)) -> dict:
 	requested_employee_id = payload.target_nhan_vien_id or payload.nhan_vien_id or payload.actor_id
-	if "admin" not in (payload.actor_role or "").strip().lower():
+	if not has_permission_group(db, payload.actor_id, ["luong", "salary", "payroll"]):
 		requested_employee_id = payload.actor_id
 	try:
 		result = calculate_kpi(

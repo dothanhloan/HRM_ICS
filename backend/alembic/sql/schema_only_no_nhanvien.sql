@@ -283,7 +283,7 @@ CREATE TABLE `nhanvien_quyen` (
 
 CREATE TABLE `phan_quyen_chuc_nang` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `vai_tro` enum('Admin','Quản lý','Nhân viên','Trưởng nhóm','Nhân viên cấp cao') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vai_tro` enum('Admin','Nhân viên') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `chuc_nang` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `co_quyen` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`id`)

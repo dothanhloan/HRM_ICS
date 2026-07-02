@@ -1,3 +1,4 @@
+import calendar
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.api.deps import get_db
 from app.api.v1.endpoints.crud_factory import create_crud_router
-from app.models.generated import DonNghiPhep, NgayPhepNam, Nhanvien, PhongBan
+from app.models.generated import DonNghiPhep, LichSuCongPhep, NgayPhepNam, Nhanvien, PhongBan
 
 router = APIRouter(prefix="/don_nghi_phep", tags=["don_nghi_phep"])
 crud_router = create_crud_router(DonNghiPhep, prefix="", tags=["don_nghi_phep"])
@@ -33,6 +34,73 @@ def _parse_date(value: str, field: str) -> date:
 def _calculate_days(start: date, end: date) -> Decimal:
 	diff = (end - start).days + 1
 	return Decimal(str(max(diff, 0)))
+
+def _add_months(value: date, months: int) -> date:
+	month_index = value.month - 1 + months
+	year = value.year + month_index // 12
+	month = month_index % 12 + 1
+	day = min(value.day, calendar.monthrange(year, month)[1])
+	return date(year, month, day)
+
+def _completed_work_months(start_date: Optional[date], as_of: date) -> int:
+	if not start_date or as_of < start_date:
+		return 0
+	months = (as_of.year - start_date.year) * 12 + as_of.month - start_date.month
+	while months > 0 and _add_months(start_date, months) > as_of:
+		months -= 1
+	return max(months, 0)
+
+def _leave_days_between(start: date, end: date, window_start: date, window_end: date) -> Decimal:
+	overlap_start = max(start, window_start)
+	overlap_end = min(end, window_end)
+	if overlap_end < overlap_start:
+		return Decimal("0.0")
+	return _calculate_days(overlap_start, overlap_end)
+
+def _stats_cutoff(nam: int) -> date:
+	today = date.today()
+	if nam == today.year:
+		return today
+	return date(nam, 12, 31)
+
+def _ensure_monthly_leave_history(
+	db: Session,
+	nhan_vien_id: int,
+	start_date: Optional[date],
+	as_of: date,
+) -> None:
+	if not start_date or as_of < start_date:
+		return
+
+	completed_months = _completed_work_months(start_date, as_of)
+	if completed_months <= 0:
+		return
+
+	existing_rows = (
+		db.query(LichSuCongPhep.nam, LichSuCongPhep.thang, LichSuCongPhep.loai_cong)
+		.filter(LichSuCongPhep.nhan_vien_id == nhan_vien_id)
+		.filter(LichSuCongPhep.loai_cong == "hang_thang")
+		.all()
+	)
+	existing_keys = {(row.nam, row.thang, row.loai_cong) for row in existing_rows}
+
+	for month_offset in range(1, completed_months + 1):
+		grant_date = _add_months(start_date, month_offset)
+		key = (grant_date.year, grant_date.month, "hang_thang")
+		if key in existing_keys:
+			continue
+		db.add(
+			LichSuCongPhep(
+				nhan_vien_id=nhan_vien_id,
+				nam=grant_date.year,
+				thang=grant_date.month,
+				so_ngay_cong=Decimal("1.0"),
+				loai_cong="hang_thang",
+				ly_do=f"Tu dong cong 1 ngay phep sau thang lam viec ket thuc ngay {grant_date.isoformat()}",
+				ngay_cong=datetime.combine(grant_date, datetime.min.time()),
+			)
+		)
+		existing_keys.add(key)
 
 
 def _is_admin(nhan_vien_id: int, db: Session) -> bool:
@@ -184,7 +252,12 @@ def leave_day_stats(
 	if not _is_admin(actor_id, db):
 		raise HTTPException(status_code=403, detail="Forbidden")
 
-	rows = db.execute(
+	window_start = date(nam, 1, 1)
+	window_end = _stats_cutoff(nam)
+	leave_window_end = date(nam, 12, 31)
+	previous_year_end = date(nam - 1, 12, 31)
+
+	employees = db.execute(
 		text(
 			"""
 			SELECT
@@ -193,41 +266,96 @@ def leave_day_stats(
 			  nv.email,
 			  nv.avatar_url,
 			  nv.ngay_vao_lam,
-			  pb.ten_phong AS phong_ban,
-			  COALESCE(npn.tong_ngay_phep, 12.0) AS tong_ngay_phep,
-			  COALESCE(npn.ngay_phep_da_dung, 0.0) AS ngay_phep_da_dung,
-			  COALESCE(npn.ngay_phep_con_lai, 12.0) AS ngay_phep_con_lai,
-			  COALESCE(npn.ngay_phep_nam_truoc, 0.0) AS ngay_phep_nam_truoc
+			  pb.ten_phong AS phong_ban
 			FROM nhanvien nv
 			LEFT JOIN phong_ban pb ON pb.id = nv.phong_ban_id
-			LEFT JOIN ngay_phep_nam npn ON npn.nhan_vien_id = nv.id AND npn.nam = :nam
 			ORDER BY nv.ho_ten ASC
 			"""
 		),
-		{"nam": nam},
 	).mappings().all()
 
+	approved_leaves = (
+		db.query(DonNghiPhep)
+		.filter(DonNghiPhep.trang_thai == "da_duyet")
+		.filter(DonNghiPhep.ngay_bat_dau <= leave_window_end)
+		.all()
+	)
+	leaves_by_employee: dict[int, list[DonNghiPhep]] = {}
+	for leave in approved_leaves:
+		leaves_by_employee.setdefault(leave.nhan_vien_id, []).append(leave)
+
 	data = []
-	for row in rows:
-		tong = float(row.get("tong_ngay_phep") or 0)
-		da_dung = float(row.get("ngay_phep_da_dung") or 0)
-		con_lai = float(row.get("ngay_phep_con_lai") or 0)
-		nam_truoc = float(row.get("ngay_phep_nam_truoc") or 0)
+	for row in employees:
+		nhan_vien_id = row.get("id")
+		ngay_vao_lam = row.get("ngay_vao_lam")
+		if isinstance(ngay_vao_lam, datetime):
+			ngay_vao_lam = ngay_vao_lam.date()
+
+		_ensure_monthly_leave_history(db, nhan_vien_id, ngay_vao_lam, window_end)
+		db.flush()
+
+		grant_rows = (
+			db.query(LichSuCongPhep)
+			.filter(LichSuCongPhep.nhan_vien_id == nhan_vien_id)
+			.filter(LichSuCongPhep.ngay_cong <= datetime.combine(window_end, datetime.max.time()))
+			.all()
+		)
+		granted_until_previous_year = Decimal("0.0")
+		granted_current_year = Decimal("0.0")
+		for grant in grant_rows:
+			so_ngay_cong = Decimal(str(grant.so_ngay_cong or 0))
+			if grant.nam < nam:
+				granted_until_previous_year += so_ngay_cong
+			elif grant.nam == nam:
+				granted_current_year += so_ngay_cong
+
+		used_until_previous_year = Decimal("0.0")
+		used_current_year = Decimal("0.0")
+		for leave in leaves_by_employee.get(nhan_vien_id, []):
+			leave_start = leave.ngay_bat_dau
+			leave_end = leave.ngay_ket_thuc
+			if isinstance(leave_start, datetime):
+				leave_start = leave_start.date()
+			if isinstance(leave_end, datetime):
+				leave_end = leave_end.date()
+			used_until_previous_year += _leave_days_between(leave_start, leave_end, date.min, previous_year_end)
+			used_current_year += _leave_days_between(leave_start, leave_end, window_start, leave_window_end)
+
+		carryover = max(granted_until_previous_year - used_until_previous_year, Decimal("0.0"))
+		total_granted = carryover + granted_current_year
+		remaining = max(total_granted - used_current_year, Decimal("0.0"))
+
+		balance = (
+			db.query(NgayPhepNam)
+			.filter(NgayPhepNam.nhan_vien_id == nhan_vien_id)
+			.filter(NgayPhepNam.nam == nam)
+			.first()
+		)
+		if not balance:
+			balance = NgayPhepNam(nhan_vien_id=nhan_vien_id, nam=nam)
+			db.add(balance)
+		balance.tong_ngay_phep = total_granted
+		balance.ngay_phep_da_dung = used_current_year
+		balance.ngay_phep_con_lai = remaining
+		balance.ngay_phep_nam_truoc = carryover
+		balance.da_cong_phep_dau_nam = False
+
 		data.append(
 			{
-				"id": row.get("id"),
+				"id": nhan_vien_id,
 				"ho_ten": row.get("ho_ten"),
 				"email": row.get("email"),
 				"avatar_url": row.get("avatar_url"),
 				"ngay_vao_lam": row.get("ngay_vao_lam"),
 				"phong_ban": row.get("phong_ban"),
-				"tong_ngay_phep": tong,
-				"ngay_phep_da_dung": da_dung,
-				"ngay_phep_con_lai": con_lai,
-				"ngay_phep_nam_truoc": nam_truoc,
-				"ngay_phep_trong_nam": max(tong - nam_truoc, 0),
+				"tong_ngay_phep": float(total_granted),
+				"ngay_phep_da_dung": float(used_current_year),
+				"ngay_phep_con_lai": float(remaining),
+				"ngay_phep_nam_truoc": float(carryover),
+				"ngay_phep_trong_nam": float(granted_current_year),
 			}
 		)
+	db.commit()
 
 	return {
 		"data": data,

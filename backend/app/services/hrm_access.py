@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+import unicodedata
 from typing import Optional
 
 from fastapi import HTTPException
@@ -24,14 +25,40 @@ def is_admin(role: Optional[str]) -> bool:
     return "admin" in normalize_role(role)
 
 
-def is_manager(role: Optional[str]) -> bool:
-    normalized = normalize_role(role)
-    return "quản lý" in normalized or "quan ly" in normalized or "manager" in normalized
-
-
 def is_employee(role: Optional[str]) -> bool:
-    normalized = normalize_role(role)
-    return not is_admin(normalized) and not is_manager(normalized)
+    return not is_admin(role)
+
+
+def normalize_permission_text(value: Optional[object]) -> str:
+    normalized = unicodedata.normalize("NFD", str(value or "").strip().lower())
+    return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+
+
+def has_permission_group(db: Session, actor_id: int, aliases: list[str]) -> bool:
+    row = db.execute(
+        text("SELECT vai_tro FROM nhanvien WHERE id = :id LIMIT 1"),
+        {"id": actor_id},
+    ).mappings().first()
+    if not row:
+        return False
+    if is_admin(row.get("vai_tro")):
+        return True
+    normalized_aliases = [normalize_permission_text(alias) for alias in aliases]
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT q.nhom_quyen
+            FROM nhanvien_quyen nq
+            JOIN quyen q ON q.id = nq.quyen_id
+            WHERE nq.nhanvien_id = :actor_id
+            """
+        ),
+        {"actor_id": actor_id},
+    ).mappings().all()
+    return any(
+        any(alias in normalize_permission_text(row.get("nhom_quyen")) for alias in normalized_aliases)
+        for row in rows
+    )
 
 
 def load_actor_context(db: Session, actor_id: int, actor_role: Optional[str] = None) -> ActorContext:
@@ -62,17 +89,6 @@ def resolve_target_employee_id(
         return target_id
 
     if target_id == context.actor_id:
-        return target_id
-
-    if is_manager(context.actor_role):
-        target_row = db.execute(
-            text("SELECT phong_ban_id FROM nhanvien WHERE id = :id LIMIT 1"),
-            {"id": target_id},
-        ).mappings().first()
-        if not target_row:
-            raise HTTPException(status_code=404, detail="Nhan vien khong ton tai")
-        if target_row.get("phong_ban_id") != context.actor_department_id:
-            raise HTTPException(status_code=403, detail="Manager chi co quyen xem team cua minh")
         return target_id
 
     raise HTTPException(status_code=403, detail="Nhan vien chi duoc truy cap du lieu cua chinh minh")

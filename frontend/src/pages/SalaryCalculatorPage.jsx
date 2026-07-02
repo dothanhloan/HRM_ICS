@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
-function SalaryCalculatorPage({ user, isAdmin, isManager }) {
+function SalaryCalculatorPage({ user, isAdmin }) {
 	const now = new Date();
 	const [month, setMonth] = useState(String(now.getMonth() + 1));
 	const [year, setYear] = useState(String(now.getFullYear()));
@@ -163,11 +163,7 @@ function SalaryCalculatorPage({ user, isAdmin, isManager }) {
 
 	const totalPages = useMemo(() => Math.max(Math.ceil(total / pageSize), 1), [total, pageSize]);
 	const pageLabel = `${String(month).padStart(2, "0")}/${year}`;
-	const visibleTitle = isAdmin
-		? "Bảng lương toàn công ty"
-		: isManager
-			? "Bảng lương team của tôi"
-			: "Bảng lương cá nhân";
+	const visibleTitle = isAdmin ? "Bảng lương toàn công ty" : "Bảng lương cá nhân";
 
 	return (
 		<section className="admin-section payroll-page">

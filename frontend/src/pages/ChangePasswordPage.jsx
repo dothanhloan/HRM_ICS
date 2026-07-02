@@ -17,7 +17,7 @@ function ChangePasswordPage({ user, changePassword }) {
 		event.preventDefault();
 		setStatus({ type: "", message: "" });
 		if (!form.old_password || !form.new_password || !form.confirm_password) {
-			setStatus({ type: "error", message: "Vui lòng nhập đầy đủ thông tin." });
+			setStatus({ type: "error", message: "Vui long nhap day du thong tin." });
 			return;
 		}
 		if (form.new_password !== form.confirm_password) {

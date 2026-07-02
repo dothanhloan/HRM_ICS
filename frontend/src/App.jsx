@@ -108,7 +108,6 @@ function App() {
 	const [taskFormOpen, setTaskFormOpen] = useState(false);
 	const [taskFormStatus, setTaskFormStatus] = useState({ type: "", message: "" });
 	const [taskAssignees, setTaskAssignees] = useState([]);
-	const [taskFollowers, setTaskFollowers] = useState([]);
 	const [taskUploadFile, setTaskUploadFile] = useState(null);
 	const [taskEmployees, setTaskEmployees] = useState([]);
 	const [taskEmployeesLoading, setTaskEmployeesLoading] = useState(false);
@@ -297,7 +296,6 @@ function App() {
 		setTaskFormOpen(false);
 		setTaskFormStatus({ type: "", message: "" });
 		setTaskAssignees([]);
-		setTaskFollowers([]);
 		setTaskEmployees([]);
 		setTaskProjects([]);
 		setTaskHistoryLogs([]);
@@ -640,7 +638,7 @@ function App() {
 			!leaveForm.ngay_ket_thuc ||
 			!leaveForm.ly_do.trim()
 		) {
-			setLeaveStatus({ type: "error", message: "Vui long nhap day du thong tin." });
+			setLeaveStatus({ type: "error", message: "Vui lòng nhập đầy đủ thông tin." });
 			return;
 		}
 
@@ -660,9 +658,9 @@ function App() {
 			});
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the gui don nghi phep");
+				throw new Error(data.detail || "Không thể gửi đơn nghỉ phép");
 			}
-			setLeaveStatus({ type: "success", message: "Gui don nghi phep thanh cong." });
+			setLeaveStatus({ type: "success", message: "Đã gửi đơn nghỉ phép thành công." });
 			setLeaveFormOpen(false);
 			resetLeaveForm();
 			fetchLeaveRequests(1, selfOnly);
@@ -687,9 +685,9 @@ function App() {
 			});
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the duyet don nghi phep");
+				throw new Error(data.detail || "Không thể duyệt đơn nghỉ phép");
 			}
-			setLeaveStatus({ type: "success", message: "Da duyet don nghi phep." });
+			setLeaveStatus({ type: "success", message: "Đã duyệt đơn nghỉ phép." });
 			fetchLeaveRequests(leavePage);
 		} catch (error) {
 			setLeaveStatus({ type: "error", message: error.message });
@@ -701,7 +699,7 @@ function App() {
 			return;
 		}
 		if (!reason || !reason.trim()) {
-			setLeaveStatus({ type: "error", message: "Vui long nhap ly do tu choi." });
+			setLeaveStatus({ type: "error", message: "Vui lòng nhập lý do từ chối." });
 			return;
 		}
 		setLeaveStatus({ type: "", message: "" });
@@ -717,9 +715,9 @@ function App() {
 			});
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tu choi don nghi phep");
+				throw new Error(data.detail || "Không thể từ chối đơn nghỉ phép");
 			}
-			setLeaveStatus({ type: "success", message: "Da tu choi don nghi phep." });
+			setLeaveStatus({ type: "success", message: "Đã từ chối đơn nghỉ phép." });
 			fetchLeaveRequests(leavePage);
 		} catch (error) {
 			setLeaveStatus({ type: "error", message: error.message });
@@ -760,7 +758,7 @@ function App() {
 			const response = await fetch(`${API_BASE}/api/v1/quyen?limit=500`);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tai danh sach quyen");
+				throw new Error(data.detail || "Không thể tải danh sách quyền");
 			}
 			setEmployeePermissions(data || []);
 		} catch (error) {
@@ -781,7 +779,7 @@ function App() {
 			);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tai danh sach phong ban");
+				throw new Error(data.detail || "Không thể tải danh sách phòng ban");
 			}
 			setEmployeeDepartments(data.data || []);
 		} catch (error) {
@@ -824,11 +822,11 @@ function App() {
 	const submitEmployeeForm = async () => {
 		setEmployeeStatus({ type: "", message: "" });
 		if (!employeeForm.ho_ten.trim() || !employeeForm.email.trim()) {
-			setEmployeeStatus({ type: "error", message: "Vui long nhap ho ten va email." });
+			setEmployeeStatus({ type: "error", message: "Vui lòng nhập họ tên và email." });
 			return;
 		}
 		if (!employeeEditingId && !employeeForm.mat_khau.trim()) {
-			setEmployeeStatus({ type: "error", message: "Vui long nhap mat khau." });
+			setEmployeeStatus({ type: "error", message: "Vui lòng nhập mật khẩu." });
 			return;
 		}
 
@@ -843,6 +841,9 @@ function App() {
 					? Number(employeeForm.luong_co_ban)
 					: null,
 			};
+			if (employeeEditingId && !payload.mat_khau?.trim()) {
+				delete payload.mat_khau;
+			}
 
 			if (employeeEditingId) {
 				const response = await fetch(`${API_BASE}/api/v1/nhanvien/${employeeEditingId}?actor=admin&actor_id=${user?.id || ""}`, {
@@ -852,7 +853,7 @@ function App() {
 				});
 				const data = await response.json();
 				if (!response.ok) {
-					throw new Error(data.detail || "Khong the cap nhat nhan vien");
+					throw new Error(data.detail || "Không thể cập nhật nhân viên");
 				}
 			} else {
 				const response = await fetch(`${API_BASE}/api/v1/nhanvien?actor_id=${user?.id || ""}`, {
@@ -862,7 +863,7 @@ function App() {
 				});
 				const data = await response.json();
 				if (!response.ok) {
-					throw new Error(data.detail || "Khong the them nhan vien");
+					throw new Error(data.detail || "Không thể thêm nhân viên");
 				}
 			}
 
@@ -903,17 +904,20 @@ function App() {
 			}
 			params.set("page", String(nextPage));
 			params.set("page_size", String(employeePageSize));
+			if (user?.id) {
+				params.set("actor_id", String(user.id));
+			}
 			const response = await fetch(`${API_BASE}/api/v1/nhanvien?${params.toString()}`);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tai danh sach nhan vien");
+				throw new Error(data.detail || "Không thể tải danh sách nhân viên");
 			}
 			setEmployeeRows(data.data || []);
 			setEmployeeTotal(data.total || 0);
 			setEmployeeTotalPages(data.total_pages || 0);
 			setEmployeePage(data.page || nextPage);
 			if (!data.data || data.data.length === 0) {
-				setEmployeeStatus({ type: "info", message: "Khong co nhan vien nao." });
+				setEmployeeStatus({ type: "info", message: "Không có nhân viên nào." });
 			}
 		} catch (error) {
 			setEmployeeStatus({ type: "error", message: error.message });
@@ -956,14 +960,14 @@ function App() {
 			);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tai danh sach du an");
+				throw new Error(data.detail || "Không thể tải danh sách dự án");
 			}
 			setProjectRows(data.data || []);
 			setProjectTotal(data.total || 0);
 			setProjectTotalPages(data.total_pages || 0);
 			setProjectPage(data.page || nextPage);
 			if (!data.data || data.data.length === 0) {
-				setProjectStatus({ type: "info", message: "Khong co du an nao." });
+				setProjectStatus({ type: "info", message: "Không có dự án nào." });
 			}
 		} catch (error) {
 			setProjectStatus({ type: "error", message: error.message });
@@ -1008,14 +1012,14 @@ function App() {
 			);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tai danh sach cong viec");
+				throw new Error(data.detail || "Không thể tải danh sách công việc");
 			}
 			setTaskRows(data.data || []);
 			setTaskTotal(data.total || 0);
 			setTaskTotalPages(data.total_pages || 0);
 			setTaskPage(data.page || nextPage);
 			if (!data.data || data.data.length === 0) {
-				setTaskStatus({ type: "info", message: "Khong co cong viec nao." });
+				setTaskStatus({ type: "info", message: "Không có công việc nào." });
 			}
 		} catch (error) {
 			setTaskStatus({ type: "error", message: error.message });
@@ -1040,14 +1044,14 @@ function App() {
 			);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tai danh sach phong ban");
+				throw new Error(data.detail || "Không thể tải danh sách phòng ban");
 			}
 			setDepartmentRows(data.data || []);
 			setDepartmentTotal(data.total || 0);
 			setDepartmentTotalPages(data.total_pages || 0);
 			setDepartmentPage(data.page || nextPage);
 			if (!data.data || data.data.length === 0) {
-				setDepartmentStatus({ type: "info", message: "Khong co phong ban nao." });
+				setDepartmentStatus({ type: "info", message: "Không có phòng ban nào." });
 			}
 		} catch (error) {
 			setDepartmentStatus({ type: "error", message: error.message });
@@ -1070,7 +1074,7 @@ function App() {
 			const response = await fetch(`${API_BASE}/api/v1/nhanvien?${params.toString()}`);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tai danh sach nhan vien phong ban");
+				throw new Error(data.detail || "Không thể tải danh sách nhân viên phòng ban");
 			}
 			setDepartmentEmployees(data.data || []);
 			if (!data.data || data.data.length === 0) {
@@ -1092,7 +1096,7 @@ function App() {
 			const response = await fetch(`${API_BASE}/api/v1/nhanvien?page=1&page_size=200`);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tai danh sach nhan vien");
+				throw new Error(data.detail || "Không thể tải danh sách nhân viên");
 			}
 			setDepartmentLeaders(data.data || []);
 		} catch (error) {
@@ -1212,7 +1216,6 @@ function App() {
 	const resetTaskForm = () => {
 		setTaskFormStatus({ type: "", message: "" });
 		setTaskAssignees([]);
-		setTaskFollowers([]);
 		setTaskUploadFile(null);
 		setTaskUploadFile(null);
 		setTaskEditingId(null);
@@ -1238,7 +1241,7 @@ function App() {
 			const response = await fetch(`${API_BASE}/api/v1/nhanvien?page=1&page_size=200`);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tai danh sach nhan vien");
+				throw new Error(data.detail || "Không thể tải danh sách nhân viên");
 			}
 			setTaskEmployees(data.data || []);
 		} catch (error) {
@@ -1268,11 +1271,40 @@ function App() {
 			);
 			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(data.detail || "Khong the tai danh sach du an");
+				throw new Error(data.detail || "Không thể tải danh sách dự án");
 			}
 			const projects = data.data || [];
 			setTaskProjects(projects);
 			return projects;
+		} catch (error) {
+			setTaskFormStatus({ type: "error", message: error.message });
+			return [];
+		} finally {
+			setTaskProjectsLoading(false);
+		}
+	};
+
+
+	const fetchTaskLeaderProjects = async () => {
+		if (!user?.id) {
+			return [];
+		}
+		setTaskProjectsLoading(true);
+		try {
+			const params = new URLSearchParams({
+				page: "1",
+				page_size: "200",
+				actor: "admin",
+				lead_id: String(user.id),
+			});
+			const response = await fetch(
+				`${API_BASE}/api/v1/du_an/danh_sach?${params.toString()}`
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai danh sach du an phu trach");
+			}
+			return data.data || [];
 		} catch (error) {
 			setTaskFormStatus({ type: "error", message: error.message });
 			return [];
@@ -1289,18 +1321,19 @@ function App() {
 		if (user?.id) {
 			setTaskForm((prev) => ({ ...prev, nguoi_giao_id: String(user.id) }));
 		}
-		const projects = await fetchTaskProjects();
-		const leaderProjects = projects.filter((project) => {
-			const leadId = project.lead_id ?? project.truong_du_an_id;
-			return leadId && user?.id && String(leadId) === String(user.id);
-		});
-		if (leaderProjects.length === 0) {
+		const availableProjects = canManageTasks
+			? await fetchTaskProjects()
+			: await fetchTaskLeaderProjects();
+		if (availableProjects.length === 0) {
 			setTaskStatus({
 				type: "error",
-				message: "Ban chua phu trach du an nao nen khong the tao cong viec.",
+				message: canManageTasks
+					? "Chua co du an nao nen khong the tao cong viec."
+					: "Ban chua phu trach du an nao nen khong the tao cong viec.",
 			});
 			return;
 		}
+		setTaskProjects(availableProjects);
 		fetchTaskEmployees(true);
 		if (user?.id) {
 			setTaskForm((prev) => ({ ...prev, nguoi_giao_id: String(user.id) }));
@@ -1333,14 +1366,6 @@ function App() {
 		);
 	};
 
-	const toggleFollower = (employeeId) => {
-		setTaskFollowers((prev) =>
-			prev.includes(employeeId)
-				? prev.filter((id) => id !== employeeId)
-				: [...prev, employeeId]
-		);
-	};
-
 	const handleTaskUploadChange = (event) => {
 		setTaskUploadFile(event.target.files?.[0] || null);
 	};
@@ -1357,7 +1382,7 @@ function App() {
 		});
 		const data = await response.json().catch(() => ({}));
 		if (!response.ok) {
-			throw new Error(data.detail || "Khong the tai file cong viec");
+			throw new Error(data.detail || "Không thể tải file công việc");
 		}
 		return data.tai_lieu_cv || null;
 	};
@@ -1367,34 +1392,48 @@ function App() {
 		const isEditingTask = Boolean(editingTaskId);
 		setTaskFormStatus({ type: "", message: "" });
 		if (!taskForm.ten_cong_viec.trim() || !taskForm.mo_ta.trim()) {
-			setTaskFormStatus({ type: "error", message: "Vui long nhap ten va mo ta." });
+			setTaskFormStatus({ type: "error", message: "Vui lòng nhập tên và mô tả." });
 			return;
 		}
 		if (!taskForm.du_an_id) {
-			setTaskFormStatus({ type: "error", message: "Vui long chon du an." });
+			setTaskFormStatus({ type: "error", message: "Vui lòng chọn dự án." });
 			return;
 		}
 		if (!taskForm.ngay_bat_dau || !taskForm.han_hoan_thanh) {
-			setTaskFormStatus({ type: "error", message: "Vui long chon thoi gian." });
+			setTaskFormStatus({ type: "error", message: "Vui lòng chọn thời gian." });
 			return;
 		}
 		const today = new Date();
 		today.setHours(0, 0, 0, 0);
 		if (new Date(taskForm.han_hoan_thanh) < new Date(taskForm.ngay_bat_dau)) {
-			setTaskFormStatus({ type: "error", message: "Deadline phai sau ngay bat dau." });
+			setTaskFormStatus({ type: "error", message: "Deadline phải sau ngày bắt đầu." });
 			return;
 		}
 		if (!isEditingTask && new Date(taskForm.han_hoan_thanh) < today) {
-			setTaskFormStatus({ type: "error", message: "Deadline khong duoc nho hon ngay hien tai." });
+			setTaskFormStatus({ type: "error", message: "Deadline không được nhỏ hơn ngày hiện tại." });
 			return;
 		}
 		if (taskAssignees.length === 0) {
-			setTaskFormStatus({ type: "error", message: "Vui long chon nguoi nhan." });
+			setTaskFormStatus({ type: "error", message: "Vui lòng chọn người nhận." });
 			return;
 		}
 		if (!user?.id) {
-			setTaskFormStatus({ type: "error", message: "Khong xac dinh nguoi dung." });
+			setTaskFormStatus({ type: "error", message: "Không xác định người dùng." });
 			return;
+		}
+
+		if (!isEditingTask && !canManageTasks) {
+			const selectedProject = taskProjects.find(
+				(project) => String(project.id) === String(taskForm.du_an_id)
+			);
+			const leadId = selectedProject?.lead_id ?? selectedProject?.truong_du_an_id;
+			if (!leadId || String(leadId) !== String(user.id)) {
+				setTaskFormStatus({
+					type: "error",
+					message: "Ban chi duoc tao cong viec trong du an minh phu trach.",
+				});
+				return;
+			}
 		}
 
 		const payload = {
@@ -1402,7 +1441,6 @@ function App() {
 			du_an_id: taskForm.du_an_id ? Number(taskForm.du_an_id) : null,
 			nguoi_giao_id: taskForm.nguoi_giao_id ? Number(taskForm.nguoi_giao_id) : user.id,
 			nguoi_nhan_ids: taskAssignees,
-			nguoi_theo_doi_ids: taskFollowers,
 			actor_id: user.id,
 			nguoi_thay_doi_id: user.id,
 		};
@@ -1523,7 +1561,6 @@ function App() {
 			tai_lieu_cv: row.tai_lieu_cv || "",
 		});
 		setTaskAssignees(assigneeIds);
-		setTaskFollowers([]);
 		setTaskFormStatus({ type: "", message: "" });
 	};
 
@@ -1975,7 +2012,6 @@ function App() {
 	};
 
 	const isAdmin = (user?.vai_tro || "").toLowerCase().includes("admin");
-	const isManager = (user?.vai_tro || "").toLowerCase().includes("quản lý");
 	const normalizePermission = (value) =>
 		String(value || "")
 			.toLowerCase()
@@ -1992,17 +2028,25 @@ function App() {
 	]
 		.map(normalizePermission)
 		.join(" ");
+	const userPermissionGroups = new Set(
+		(user?.permissions || [])
+			.map((permission) => normalizePermission(permission.nhom_quyen))
+			.filter(Boolean),
+	);
 	const hasPermission = (aliases = []) =>
 		isAdmin || aliases.some((alias) => userPermissionText.includes(normalizePermission(alias)));
-	const canManageEmployees = hasPermission(["nhan_su", "nhanvien", "nhan vien", "employees"]);
-	const canManageDepartments = hasPermission(["phong_ban", "phong ban", "departments"]);
-	const canManageAttendance = hasPermission(["cham_cong", "cham cong", "attendance"]);
-	const canManageLeave = hasPermission(["nghi_phep", "nghi phep", "leave"]);
-	const canViewLeaveStats = canManageLeave || hasPermission(["thong_ke_phep", "leave_stats"]);
-	const canManageProjects = hasPermission(["du_an", "du an", "projects"]);
-	const canManageTasks = hasPermission(["cong_viec", "cong viec", "tasks"]);
-	const canUseKpi = Boolean(user?.id) || hasPermission(["kpi"]);
-	const canUseSalary = hasPermission(["luong", "salary", "payroll"]);
+	const hasPermissionGroup = (aliases = []) =>
+		isAdmin || aliases.some((alias) => userPermissionGroups.has(normalizePermission(alias)));
+	const canManageEmployees = hasPermissionGroup(["nhan_su", "nhanvien", "nhan vien", "employees"]);
+	const canManageDepartments = hasPermissionGroup(["phong_ban", "phongban", "phong ban", "departments"]);
+	const canManageAttendance = hasPermissionGroup(["cham_cong", "chamcong", "cham cong", "attendance"]);
+	const canManageLeave = canManageAttendance;
+	const canViewLeaveStats = canManageLeave;
+	const canManageProjects = hasPermissionGroup(["du_an", "duan", "du an", "projects"]);
+	const canManageTasks = hasPermissionGroup(["cong_viec", "congviec", "cong viec", "tasks"]);
+	const canManagePayroll = hasPermissionGroup(["luong", "salary", "payroll"]);
+	const canUseSalary = Boolean(user?.id);
+	const canUseKpi = Boolean(user?.id);
 	const visibleMenuItems = [
 		{ label: "Dashboard", icon: "chart", to: "/dashboard" },
 		...(canManageEmployees ? [{ label: "Nhân sự", icon: "people", to: "/employees" }] : []),
@@ -2073,7 +2117,7 @@ function App() {
 				}
 			>
 				<Route path="/" element={<Navigate to="/dashboard" replace />} />
-				<Route path="/dashboard" element={<DashboardPage user={user} isAdmin={isAdmin} apiBase={API_BASE} />} />
+				<Route path="/dashboard" element={<DashboardPage user={user} isAdmin={isAdmin} canManagePayroll={canManagePayroll} apiBase={API_BASE} />} />
 				<Route
 					path="/profile"
 					element={
@@ -2259,8 +2303,7 @@ function App() {
 							taskFormOpen={taskFormOpen}
 							taskFormStatus={taskFormStatus}
 							taskAssignees={taskAssignees}
-							taskFollowers={taskFollowers}
-							taskEmployees={taskEmployees}
+								taskEmployees={taskEmployees}
 							taskProjects={taskProjects}
 							taskProjectsLoading={taskProjectsLoading}
 							taskEmployeesLoading={taskEmployeesLoading}
@@ -2273,15 +2316,13 @@ function App() {
 							setTaskFormOpen={setTaskFormOpen}
 							setTaskForm={setTaskForm}
 							setTaskAssignees={setTaskAssignees}
-							setTaskFollowers={setTaskFollowers}
-							resetTaskForm={resetTaskForm}
+								resetTaskForm={resetTaskForm}
 							fetchTasks={fetchTasks}
 							fetchTaskEmployees={fetchTaskEmployees}
 							fetchTaskProjects={fetchTaskProjects}
 							openCreateTask={openCreateTask}
 							toggleAssignee={toggleAssignee}
-							toggleFollower={toggleFollower}
-							handleTaskUploadChange={handleTaskUploadChange}
+								handleTaskUploadChange={handleTaskUploadChange}
 							submitTaskForm={submitTaskForm}
 							submitTaskStepForm={submitTaskStepForm}
 							submitTaskStepUpdate={submitTaskStepUpdate}
@@ -2344,11 +2385,11 @@ function App() {
 				/>
 				<Route
 					path="/kpi-calculator"
-					element={canUseKpi ? <KpiCalculatorPage user={user} isAdmin={isAdmin} isManager={isManager} /> : <Navigate to="/dashboard" replace />}
+					element={canUseKpi ? <KpiCalculatorPage user={user} isAdmin={isAdmin || canManagePayroll} /> : <Navigate to="/dashboard" replace />}
 				/>
 				<Route
 					path="/salary-calculator"
-					element={canUseSalary ? <SalaryCalculatorPage user={user} isAdmin={canUseSalary} isManager={isManager} /> : <Navigate to="/dashboard" replace />}
+					element={canUseSalary ? <SalaryCalculatorPage user={user} isAdmin={canManagePayroll} /> : <Navigate to="/dashboard" replace />}
 				/>
 				<Route
 					path="/employees"

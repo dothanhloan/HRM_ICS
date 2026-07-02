@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from app.models.generated import LuuKpi
 from app.services.hrm_access import (
     get_standard_work_days,
+    has_permission_group,
     is_admin,
-    is_manager,
     load_actor_context,
     resolve_target_employee_id,
 )
@@ -317,8 +317,9 @@ def kpi_score_to_coefficient(score: float) -> Decimal:
 
 def run_kpi_period(db: Session, actor_id: int, actor_role: str, thang: int, nam: int) -> dict:
     context = load_actor_context(db, actor_id, actor_role)
-    if not is_admin(context.actor_role):
-        raise ValueError("Chi admin moi co quyen chay KPI thang")
+    payroll_manager = has_permission_group(db, context.actor_id, ["luong", "salary", "payroll"])
+    if not payroll_manager:
+        raise ValueError("Khong co quyen quan ly KPI")
 
     employee_rows = db.execute(
         text(
@@ -365,8 +366,9 @@ def list_kpi_records(
     page_size: int = 20,
 ) -> dict:
     context = load_actor_context(db, actor_id, actor_role)
+    manager_view = has_permission_group(db, context.actor_id, ["luong", "salary", "payroll"])
     resolved_target = target_employee_id
-    if not is_admin(context.actor_role):
+    if not manager_view:
         resolved_target = context.actor_id
     elif resolved_target is not None:
         resolved_target = resolve_target_employee_id(db, context.actor_id, resolved_target, context.actor_role)

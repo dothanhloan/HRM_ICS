@@ -318,7 +318,7 @@ class Nhanvien(Base):
     )
     vai_tro = sa.Column(
         'vai_tro',
-        mysql.ENUM('Admin', 'Quản lý', 'Nhân viên'),
+        mysql.ENUM('Admin', 'Nhân viên'),
         server_default=sa.text("'Nhân viên'"),
     )
     ngay_vao_lam = sa.Column('ngay_vao_lam', sa.Date)
@@ -341,7 +341,7 @@ class NhanvienQuyen(Base):
 class PhanQuyenChucNang(Base):
     __tablename__ = "phan_quyen_chuc_nang"
     id = sa.Column('id', sa.Integer, primary_key=True, nullable=False, autoincrement=True)
-    vai_tro = sa.Column('vai_tro', mysql.ENUM('Admin', 'Quản lý', 'Nhân viên', 'Trưởng nhóm', 'Nhân viên cấp cao'))
+    vai_tro = sa.Column('vai_tro', mysql.ENUM('Admin', 'Nhân viên'))
     chuc_nang = sa.Column('chuc_nang', sa.String(100))
     co_quyen = sa.Column('co_quyen', sa.Boolean, server_default=sa.text("'0'"))
 

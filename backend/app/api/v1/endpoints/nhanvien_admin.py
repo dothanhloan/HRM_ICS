@@ -1,4 +1,6 @@
 from typing import Optional
+from decimal import Decimal, InvalidOperation
+import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -20,6 +22,43 @@ def normalize_optional(value: Optional[object]) -> Optional[object]:
         trimmed = value.strip()
         return trimmed if trimmed else None
     return value
+
+def normalize_permission_text(value: Optional[object]) -> str:
+    normalized = unicodedata.normalize("NFD", str(value or "").strip().lower())
+    return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+
+
+def matches_permission_group(value: Optional[object], aliases: list[str]) -> bool:
+    normalized = normalize_permission_text(value)
+    return any(normalize_permission_text(alias) in normalized for alias in aliases)
+
+
+def require_employee_permission_group(db: Session, actor_id: Optional[int]) -> None:
+    if not actor_id:
+        raise HTTPException(status_code=403, detail="Missing actor_id")
+    row = db.execute(
+        text("SELECT vai_tro FROM nhanvien WHERE id = :id LIMIT 1"),
+        {"id": actor_id},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=403, detail="Actor khong ton tai")
+    if "admin" in normalize_permission_text(row.get("vai_tro")):
+        return
+    rows = db.execute(
+        text(
+            """
+            SELECT q.nhom_quyen
+            FROM nhanvien_quyen nq
+            JOIN quyen q ON q.id = nq.quyen_id
+            WHERE nq.nhanvien_id = :actor_id
+            """
+        ),
+        {"actor_id": actor_id},
+    ).mappings().all()
+    if any(matches_permission_group(row.get("nhom_quyen"), ["nhan_su", "nhanvien", "nhan vien", "employees"]) for row in rows):
+        return
+    raise HTTPException(status_code=403, detail="Khong co quyen nhom Nhan su")
+
 
 def fetch_permission_ids(db: Session, nhanvien_ids: list[int]) -> dict[int, list[int]]:
     if not nhanvien_ids:
@@ -43,15 +82,30 @@ def fetch_permission_ids(db: Session, nhanvien_ids: list[int]) -> dict[int, list
 def sync_employee_permissions(db: Session, nhanvien_id: int, quyen_ids: Optional[list[int]]) -> None:
     if quyen_ids is None:
         return
-    unique_ids = sorted({int(quyen_id) for quyen_id in quyen_ids})
-    if unique_ids:
-        existing = db.execute(
-            text("SELECT id FROM quyen WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)),
-            {"ids": unique_ids},
-        ).scalars().all()
-        missing = set(unique_ids) - set(existing)
+    requested_ids = sorted({int(quyen_id) for quyen_id in quyen_ids})
+    resolved_ids: list[int] = []
+    if requested_ids:
+        rows = db.execute(
+            text("SELECT id, nhom_quyen FROM quyen WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)),
+            {"ids": requested_ids},
+        ).mappings().all()
+        existing_ids = {int(row["id"]) for row in rows}
+        missing = set(requested_ids) - existing_ids
         if missing:
             raise HTTPException(status_code=400, detail="Invalid quyen_ids")
+
+        group_names = sorted({row.get("nhom_quyen") for row in rows if row.get("nhom_quyen")})
+        if group_names:
+            resolved_ids.extend(
+                int(permission_id)
+                for permission_id in db.execute(
+                    text("SELECT id FROM quyen WHERE nhom_quyen IN :groups").bindparams(bindparam("groups", expanding=True)),
+                    {"groups": group_names},
+                ).scalars().all()
+            )
+        resolved_ids.extend(int(row["id"]) for row in rows if not row.get("nhom_quyen"))
+
+    unique_ids = sorted(set(resolved_ids))
     db.execute(text("DELETE FROM nhanvien_quyen WHERE nhanvien_id = :id"), {"id": nhanvien_id})
     for quyen_id in unique_ids:
         db.execute(
@@ -86,6 +140,15 @@ def _stringify_audit_value(value: Optional[object]) -> Optional[str]:
     if value is None:
         return None
     return str(value)
+
+
+def _audit_values_equal(field: str, old_value: Optional[object], new_value: Optional[object]) -> bool:
+    if field == "luong_co_ban":
+        try:
+            return Decimal(str(old_value or 0)).quantize(Decimal("0.01")) == Decimal(str(new_value or 0)).quantize(Decimal("0.01"))
+        except (InvalidOperation, ValueError):
+            return _stringify_audit_value(old_value) == _stringify_audit_value(new_value)
+    return _stringify_audit_value(old_value) == _stringify_audit_value(new_value)
 
 def _audit_actor_id(actor: str, nhanvien_id: int, actor_id: Optional[int] = None) -> Optional[int]:
     if actor_id:
@@ -185,8 +248,11 @@ def list_nhanvien(
     page_size: int = 20,
     skip: Optional[int] = None,
     limit: Optional[int] = None,
+    actor_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ) -> dict:
+    if actor_id is not None:
+        require_employee_permission_group(db, actor_id)
     conditions = []
     resolved_limit = limit if limit is not None else page_size
     resolved_skip = skip if skip is not None else max(page - 1, 0) * resolved_limit
@@ -258,6 +324,7 @@ def create_nhanvien(
     actor_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ) -> dict:
+    require_employee_permission_group(db, actor_id)
     if not payload.ho_ten.strip() or not payload.email.strip() or not payload.mat_khau.strip():
         raise HTTPException(status_code=400, detail="Missing required fields")
 
@@ -339,6 +406,8 @@ def update_nhanvien(
     actor_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ) -> dict:
+    if actor.lower() != "employee":
+        require_employee_permission_group(db, actor_id)
     allowed_fields = {
         "ho_ten",
         "email",
@@ -391,7 +460,7 @@ def update_nhanvien(
 
     changed_fields = []
     for key, value in data.items():
-        if _stringify_audit_value(old_row[key]) != _stringify_audit_value(value):
+        if not _audit_values_equal(key, old_row[key], value):
             changed_fields.append((key, old_row[key], value))
 
     if data:
@@ -473,6 +542,7 @@ def delete_nhanvien(
     actor_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ) -> dict:
+    require_employee_permission_group(db, actor_id)
     row = db.execute(
         text("SELECT id, trang_thai_lam_viec FROM nhanvien WHERE id = :id"),
         {"id": nhanvien_id},

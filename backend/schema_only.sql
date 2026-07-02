@@ -286,7 +286,7 @@ CREATE TABLE `nhanvien` (
   `chuc_vu` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `luong_co_ban` decimal(12,2) DEFAULT '0.00',
   `trang_thai_lam_viec` enum('Đang làm','Tạm nghỉ','Nghỉ việc') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Đang làm',
-  `vai_tro` enum('Admin','Quản lý','Nhân viên') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Nhân viên',
+  `vai_tro` enum('Admin','Nhân viên') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Nhân viên',
   `ngay_vao_lam` date DEFAULT NULL,
   `avatar_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ngay_tao` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -305,7 +305,7 @@ CREATE TABLE `nhanvien_quyen` (
 
 CREATE TABLE `phan_quyen_chuc_nang` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `vai_tro` enum('Admin','Quản lý','Nhân viên','Trưởng nhóm','Nhân viên cấp cao') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `vai_tro` enum('Admin','Nhân viên') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `chuc_nang` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `co_quyen` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`id`)

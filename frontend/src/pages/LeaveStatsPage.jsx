@@ -63,15 +63,15 @@ function LeaveStatsPage({ user, apiBase }) {
 			<div className="leave-hero stats">
 				<div className="leave-hero-content">
 					<h2>Thống kê ngày phép nhân viên - Năm {year}</h2>
-					<p>Theo dõi tổng phép cấp phát, đã dùng và còn lại theo từng nhân viên</p>
+					<p>Theo dõi ngày phép chưa dùng, đã dùng và còn lại của từng nhân viên</p>
 				</div>
 			</div>
 
 			<div className="leave-summary leave-stats-summary">
-				<div className="leave-stat-card total">
-					<span>Tổng phép cấp phát</span>
+				<div className="leave-stat-card pending">
+					<span>Tổng phép chưa dùng</span>
 					<strong>{formatNumber(summary.tong_ngay_phep)}</strong>
-					<small>{summary.nhan_vien || rows.length} nhân viên</small>
+					<small>Từ năm cũ đến hiện tại</small>
 				</div>
 				<div className="leave-stat-card rejected">
 					<span>Tổng phép đã dùng</span>
@@ -83,10 +83,10 @@ function LeaveStatsPage({ user, apiBase }) {
 					<strong>{formatNumber(summary.ngay_phep_con_lai)}</strong>
 					<small>Có thể sử dụng</small>
 				</div>
-				<div className="leave-stat-card pending">
-					<span>Phép năm trước</span>
-					<strong>{formatNumber(summary.ngay_phep_nam_truoc)}</strong>
-					<small>Chuyển sang</small>
+				<div className="leave-stat-card total">
+					<span>Nhân viên</span>
+					<strong>{summary.nhan_vien || rows.length}</strong>
+					<small>Đang thống kê</small>
 				</div>
 			</div>
 
@@ -119,20 +119,19 @@ function LeaveStatsPage({ user, apiBase }) {
 							<th>Nhân viên</th>
 							<th>Phòng ban</th>
 							<th>Ngày vào làm</th>
-							<th>Tổng phép {year}</th>
+							<th>Chưa dùng</th>
 							<th>Đã dùng</th>
-							<th>Phép {year}</th>
-							<th>Còn lại {Number(year) - 1}</th>
+							<th>Còn lại</th>
 						</tr>
 					</thead>
 					<tbody>
 						{loading ? (
 							<tr>
-								<td colSpan={8}>Đang tải dữ liệu...</td>
+								<td colSpan={7}>Đang tải dữ liệu...</td>
 							</tr>
 						) : rows.length === 0 ? (
 							<tr>
-								<td colSpan={8}>Chưa có dữ liệu ngày phép.</td>
+								<td colSpan={7}>Chưa có dữ liệu ngày phép.</td>
 							</tr>
 						) : (
 							rows.map((row, index) => (
@@ -141,7 +140,7 @@ function LeaveStatsPage({ user, apiBase }) {
 									<td>
 										<div className="leave-employee-cell">
 											{row.avatar_url ? (
-												<img className="attendance-avatar" src={row.avatar_url} alt={row.ho_ten || "Nhan vien"} />
+												<img className="attendance-avatar" src={row.avatar_url} alt={row.ho_ten || "Nhân viên"} />
 											) : (
 												<span className="attendance-avatar placeholder">{getInitials(row.ho_ten)}</span>
 											)}
@@ -155,8 +154,7 @@ function LeaveStatsPage({ user, apiBase }) {
 									<td>{row.ngay_vao_lam || "-"}</td>
 									<td><span className="leave-days-badge">{formatNumber(row.tong_ngay_phep)} ngày</span></td>
 									<td><span className="leave-used-value">{formatNumber(row.ngay_phep_da_dung)} ngày</span></td>
-									<td><span className="leave-current-value">{formatNumber(row.ngay_phep_trong_nam)} ngày</span></td>
-									<td><span className="leave-remain-value">{formatNumber(row.ngay_phep_nam_truoc)} ngày</span></td>
+									<td><span className="leave-remain-value">{formatNumber(row.ngay_phep_con_lai)} ngày</span></td>
 								</tr>
 							))
 						)}

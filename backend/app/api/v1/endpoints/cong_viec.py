@@ -25,7 +25,6 @@ class CongViecCreate(BaseModel):
 	tai_lieu_cv: Optional[str] = None
 	nguoi_giao_id: int
 	nguoi_nhan_ids: list[int]
-	nguoi_theo_doi_ids: Optional[list[int]] = None
 	actor_id: Optional[int] = None
 
 
@@ -40,7 +39,6 @@ class CongViecUpdate(BaseModel):
 	tai_lieu_cv: Optional[str] = None
 	nguoi_giao_id: Optional[int] = None
 	nguoi_nhan_ids: Optional[list[int]] = None
-	nguoi_theo_doi_ids: Optional[list[int]] = None
 	nguoi_thay_doi_id: Optional[int] = None
 	actor_id: Optional[int] = None
 
@@ -101,13 +99,15 @@ def _get_task_access(cong_viec_id: int, nhan_vien_id: Optional[int], db: Session
 		{"cong_viec_id": cong_viec_id, "nhan_vien_id": nhan_vien_id},
 	).mappings().first()
 
-def _assert_project_leader(du_an_id: int, actor_id: Optional[int], db: Session) -> None:
+def _assert_project_leader_or_admin(du_an_id: int, actor_id: Optional[int], db: Session) -> None:
 	project = db.execute(
 		text("SELECT id, lead_id FROM du_an WHERE id = :id"),
 		{"id": du_an_id},
 	).mappings().first()
 	if not project:
 		raise HTTPException(status_code=400, detail="Du an not found")
+	if _is_admin(actor_id, db):
+		return
 	if int(project["lead_id"] or 0) != int(actor_id or 0):
 		raise HTTPException(status_code=403, detail="Chi leader du an moi duoc giao viec")
 
@@ -662,7 +662,7 @@ def create_cong_viec(payload: CongViecCreate, db: Session = Depends(get_db)) -> 
 	if payload.actor_id is None:
 		raise HTTPException(status_code=400, detail="Missing actor_id")
 	actor_id = payload.actor_id
-	_assert_project_leader(int(payload.du_an_id), actor_id, db)
+	_assert_project_leader_or_admin(int(payload.du_an_id), actor_id, db)
 	if int(payload.nguoi_giao_id) != int(actor_id):
 		raise HTTPException(status_code=403, detail="Nguoi giao phai la leader dang thao tac")
 
@@ -674,8 +674,7 @@ def create_cong_viec(payload: CongViecCreate, db: Session = Depends(get_db)) -> 
 		raise HTTPException(status_code=400, detail="Nguoi giao not found")
 
 	assignees = list({int(member_id) for member_id in payload.nguoi_nhan_ids})
-	followers = [int(member_id) for member_id in (payload.nguoi_theo_doi_ids or [])]
-	all_members = list({*assignees, *followers})
+	all_members = assignees
 	if all_members:
 		existing_members = db.execute(
 			text("SELECT COUNT(*) FROM nhanvien WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)),

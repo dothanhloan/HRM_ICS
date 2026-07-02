@@ -43,6 +43,17 @@ function EmployeesPage({
 	const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
 	const [employeeHistoryError, setEmployeeHistoryError] = useState("");
 
+	const permissionGroupLabels = {
+		nhanvien: "Quản lý nhân sự",
+		phongban: "Quản lý phòng ban",
+		chamcong: "Quản lý chấm công & nghỉ phép",
+		congviec: "Quản lý công việc",
+		duan: "Quản lý dự án",
+		luong: "Quản lý lương & KPI",
+	};
+
+	const getPermissionGroupLabel = (groupName) => permissionGroupLabels[String(groupName || "").trim().toLowerCase()] || groupName || "Khác";
+
 	const permissionGroups = useMemo(() => {
 		return employeePermissions.reduce((groups, permission) => {
 			const groupName = permission.nhom_quyen || "Khác";
@@ -54,15 +65,16 @@ function EmployeesPage({
 		}, {});
 	}, [employeePermissions]);
 
-	const togglePermission = (permissionId) => {
-		const currentIds = employeeForm.quyen_ids || [];
-		const permissionKey = Number(permissionId);
-		const hasPermission = currentIds.map(Number).includes(permissionKey);
+	const togglePermissionGroup = (permissions) => {
+		const currentIds = (employeeForm.quyen_ids || []).map(Number);
+		const groupIds = permissions.map((permission) => Number(permission.id));
+		const hasFullGroup = groupIds.every((permissionId) => currentIds.includes(permissionId));
+		const nextIds = hasFullGroup
+			? currentIds.filter((permissionId) => !groupIds.includes(permissionId))
+			: Array.from(new Set([...currentIds, ...groupIds]));
 		setEmployeeForm({
 			...employeeForm,
-			quyen_ids: hasPermission
-				? currentIds.filter((id) => Number(id) !== permissionKey)
-				: [...currentIds, permissionKey],
+			quyen_ids: nextIds,
 		});
 	};
 
@@ -74,23 +86,23 @@ function EmployeesPage({
 				<p>Chưa có quyền trong bảng quyền.</p>
 			) : null}
 			<div className="permission-grid">
-				{Object.entries(permissionGroups).map(([groupName, permissions]) => (
-					<div key={groupName} className="permission-card">
-						<strong>{groupName}</strong>
-						{permissions.map((permission) => (
-							<label key={permission.id} className="permission-option">
-								<input
-									type="checkbox"
-									checked={(employeeForm.quyen_ids || [])
-										.map(Number)
-										.includes(Number(permission.id))}
-									onChange={() => togglePermission(permission.id)}
-								/>
-								<span>{permission.ten_quyen || permission.ma_quyen}</span>
-							</label>
-						))}
-					</div>
-				))}
+				{Object.entries(permissionGroups).map(([groupName, permissions]) => {
+					const selectedIds = (employeeForm.quyen_ids || []).map(Number);
+					const groupIds = permissions.map((permission) => Number(permission.id));
+					const hasFullGroup = groupIds.length > 0 && groupIds.every((permissionId) => selectedIds.includes(permissionId));
+					return (
+						<label key={groupName} className="permission-card permission-option">
+							<input
+								type="checkbox"
+								checked={hasFullGroup}
+								onChange={() => togglePermissionGroup(permissions)}
+							/>
+							<span>
+								<strong>{getPermissionGroupLabel(groupName)}</strong>
+							</span>
+						</label>
+					);
+				})}
 			</div>
 		</div>
 	);
@@ -282,7 +294,6 @@ function EmployeesPage({
 					>
 						<option value="">Tất cả quyền</option>
 						<option value="Admin">Admin</option>
-						<option value="Quản lý">Quản lý</option>
 						<option value="Nhân viên">Nhân viên</option>
 					</select>
 					<button type="button" onClick={() => fetchEmployees(1)}>
@@ -458,7 +469,6 @@ function EmployeesPage({
 									}
 								>
 									<option value="Admin">Admin</option>
-									<option value="Quản lý">Quản lý</option>
 									<option value="Nhân viên">Nhân viên</option>
 								</select>
 							</div>
@@ -865,7 +875,6 @@ function EmployeesPage({
 									}
 								>
 									<option value="Admin">Admin</option>
-									<option value="Quản lý">Quản lý</option>
 									<option value="Nhân viên">Nhân viên</option>
 								</select>
 							</div>

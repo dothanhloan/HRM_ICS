@@ -11,7 +11,7 @@ const getDefaultKpiPeriod = () => {
 	};
 };
 
-function KpiCalculatorPage({ user, isAdmin, isManager }) {
+function KpiCalculatorPage({ user, isAdmin }) {
 	const defaultPeriod = getDefaultKpiPeriod();
 	const [month, setMonth] = useState(defaultPeriod.month);
 	const [year, setYear] = useState(defaultPeriod.year);
@@ -128,11 +128,7 @@ function KpiCalculatorPage({ user, isAdmin, isManager }) {
 	const pageLabel = `${String(month).padStart(2, "0")}/${year}`;
 	const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`;
 
-	const visibleTitle = isAdmin
-		? "KPI toàn công ty"
-		: isManager
-			? "KPI team của tôi"
-			: "KPI cá nhân";
+	const visibleTitle = isAdmin ? "KPI toàn công ty" : "KPI cá nhân";
 
 	return (
 		<section className="admin-section payroll-page">

@@ -264,7 +264,7 @@ function EmployeeDashboard({ user, data, status }) {
 	);
 }
 
-function DashboardPage({ user, isAdmin, apiBase }) {
+function DashboardPage({ user, isAdmin, canManagePayroll = false, apiBase }) {
 	const [loading, setLoading] = useState(false);
 	const [status, setStatus] = useState({ type: "", message: "" });
 	const [data, setData] = useState({
@@ -301,7 +301,7 @@ function DashboardPage({ user, isAdmin, apiBase }) {
 				const now = new Date();
 				const month = now.getMonth() + 1;
 				const year = now.getFullYear();
-				const [employees, departments, tasks, projects, attendance, leaves, kpi, payroll, notifications] = isAdmin
+				const [employees, departments, tasks, projects, attendance, leaves, kpi, payroll, notifications] = (isAdmin || canManagePayroll)
 					? await Promise.all([
 							fetchJson("/api/v1/nhanvien?page=1&page_size=500"),
 							fetchJson("/api/v1/phong_ban/danh_sach?page=1&page_size=200"),
@@ -345,7 +345,7 @@ function DashboardPage({ user, isAdmin, apiBase }) {
 			}
 		};
 		loadDashboard();
-	}, [apiBase, isAdmin, user?.id]);
+	}, [apiBase, isAdmin, canManagePayroll, user?.id]);
 
 	const adminStats = useMemo(() => {
 		const today = new Date();
@@ -469,7 +469,7 @@ function DashboardPage({ user, isAdmin, apiBase }) {
 		};
 	}, [data, selectedGroup]);
 
-	if (!isAdmin) {
+	if (!isAdmin && !canManagePayroll) {
 		return <EmployeeDashboard user={user} data={data} status={status} />;
 		const completedTasks = data.tasks.rows.filter((row) => isDone(row.trang_thai)).length;
 		const lateAttendance = data.attendance.rows.filter((row) =>

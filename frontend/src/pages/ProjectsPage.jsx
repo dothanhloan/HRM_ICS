@@ -537,7 +537,6 @@ function ProjectsPage({
 								<th>ID</th>
 								<th>Tên dự án</th>
 								<th>Trưởng dự án</th>
-								<th>Số thành viên</th>
 								<th>Nhóm</th>
 								<th>Trạng thái</th>
 								<th>Ngày bắt đầu</th>
@@ -548,7 +547,7 @@ function ProjectsPage({
 						<tbody>
 							{projectLoading ? (
 								<tr>
-									<td colSpan="9">Đang tải dữ liệu...</td>
+									<td colSpan="8">Đang tải dữ liệu...</td>
 								</tr>
 							) : (
 								projectRows.map((row) => (
@@ -572,9 +571,6 @@ function ProjectsPage({
 										</td>
 										<td>
 											<span className="data-chip muted">{row.lead_name || "-"}</span>
-										</td>
-										<td>
-											<span className="data-emphasis">{row.so_thanh_vien ?? 0}</span>
 										</td>
 										<td>
 											<span className="data-chip">{row.nhom_du_an || "-"}</span>
@@ -620,7 +616,7 @@ function ProjectsPage({
 							)}
 							{!projectLoading && projectRows.length === 0 ? (
 								<tr>
-									<td colSpan="9">Không có dữ liệu</td>
+									<td colSpan="8">Không có dữ liệu</td>
 								</tr>
 							) : null}
 						</tbody>

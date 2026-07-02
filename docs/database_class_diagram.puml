@@ -218,7 +218,7 @@ class Nhanvien as "nhanvien" {
   chuc_vu: varchar(100)
   luong_co_ban: decimal(12,2)
   trang_thai_lam_viec: enum('Đang làm','Tạm nghỉ','Nghỉ việc')
-  vai_tro: enum('Admin','Quản lý','Nhân viên')
+  vai_tro: enum('Admin','Nhân viên')
   ngay_vao_lam: date
   avatar_url: varchar(255)
   ngay_tao: timestamp not null
@@ -231,7 +231,7 @@ class NhanvienQuyen as "nhanvien_quyen" {
 
 class PhanQuyenChucNang as "phan_quyen_chuc_nang" {
   *id: int not null auto
-  vai_tro: enum('Admin','Quản lý','Nhân viên','Trưởng nhóm','Nhân viên cấp cao')
+  vai_tro: enum('Admin','Nhân viên')
   chuc_nang: varchar(100)
   co_quyen: tinyint(1)
 }

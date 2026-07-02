@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.models.generated import Luong
 from app.services.hrm_access import (
+    has_permission_group,
     is_admin,
-    is_manager,
     load_actor_context,
     resolve_target_employee_id,
 )
@@ -427,9 +427,9 @@ def list_payroll_records(
     page_size: int = 20,
 ) -> dict:
     context = load_actor_context(db, actor_id, actor_role)
-    admin_view = is_admin(context.actor_role)
+    payroll_manager = has_permission_group(db, context.actor_id, ["luong", "salary", "payroll"])
     resolved_target = target_employee_id
-    if not admin_view:
+    if not payroll_manager:
         resolved_target = context.actor_id
     elif resolved_target is not None:
         resolved_target = resolve_target_employee_id(db, context.actor_id, resolved_target, context.actor_role)
@@ -448,7 +448,7 @@ def list_payroll_records(
     if payroll_status:
         where_clauses.append("l.trang_thai = :payroll_status")
         params["payroll_status"] = payroll_status
-    if department_id is not None and admin_view:
+    if department_id is not None and payroll_manager:
         where_clauses.append("nv.phong_ban_id = :department_id")
         params["department_id"] = department_id
     if issue:
@@ -468,7 +468,7 @@ def list_payroll_records(
     if resolved_target is not None:
         where_clauses.append("l.nhan_vien_id = :target_employee_id")
         params["target_employee_id"] = resolved_target
-    if not admin_view:
+    if not payroll_manager:
         where_clauses.append("l.trang_thai IN ('Đã chốt', 'Đã thanh toán')")
 
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
@@ -546,8 +546,8 @@ def approve_payroll_record(
     payroll_id: int,
 ) -> dict:
     context = load_actor_context(db, actor_id, actor_role)
-    if not is_admin(context.actor_role):
-        raise ValueError("Chi admin moi co quyen duyet bang luong")
+    if not has_permission_group(db, context.actor_id, ["luong", "salary", "payroll"]):
+        raise ValueError("Khong co quyen duyet bang luong")
 
     payroll = db.query(Luong).filter(Luong.id == payroll_id).first()
     if not payroll:
@@ -567,8 +567,8 @@ def export_payroll_period(
     nam: int,
 ) -> dict:
     context = load_actor_context(db, actor_id, actor_role)
-    if not is_admin(context.actor_role):
-        raise ValueError("Chi admin moi co quyen xuat bang luong")
+    if not has_permission_group(db, context.actor_id, ["luong", "salary", "payroll"]):
+        raise ValueError("Khong co quyen xuat bang luong")
 
     employees = db.execute(
         text(
