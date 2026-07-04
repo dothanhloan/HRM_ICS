@@ -4,6 +4,7 @@ function TasksPage({
 	user,
 	isAdmin,
 	taskRows,
+	assignedSubtasks,
 	taskTotal,
 	taskQuery,
 	taskStatusFilter,
@@ -41,6 +42,7 @@ function TasksPage({
 	setTaskPageSize,
 	taskDetailOpen,
 	taskDetailTarget,
+	assignedStepId,
 	submitTaskStepForm,
 	submitTaskStepUpdate,
 	approveTask,
@@ -131,11 +133,17 @@ function TasksPage({
 		try {
 			const payload = {
 				...subtaskForm,
-				cong_viec_id: Number(subtaskForm.cong_viec_id),
-				nguoi_nhan_ids: subtaskRecipients,
 			};
+			delete payload.cong_viec_id;
+			delete payload.nguoi_nhan_ids;
+			if (!subtaskEditingId || canManageTaskSteps) {
+				payload.cong_viec_id = Number(subtaskForm.cong_viec_id);
+			}
+			if (canManageTaskSteps) {
+				payload.nguoi_nhan_ids = subtaskRecipients;
+			}
 			if (subtaskEditingId) {
-				await submitTaskStepUpdate(subtaskEditingId, payload);
+				await submitTaskStepUpdate(subtaskEditingId, payload, Number(subtaskForm.cong_viec_id));
 			} else {
 				await submitTaskStepForm(payload);
 			}
@@ -243,6 +251,14 @@ function TasksPage({
 		return taskProjects.find((project) => String(project.id) === selectedId) || null;
 	}, [taskForm.du_an_id, taskProjects]);
 
+	const isInactiveProject = (project) => {
+		const normalized = String(project?.trang_thai_duan || "")
+			.toLowerCase()
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "");
+		return normalized.includes("ngung hoat dong");
+	};
+
 	const isProjectLead = useMemo(() => {
 		if (!selectedProject || !user?.id) {
 			return false;
@@ -251,10 +267,19 @@ function TasksPage({
 		return leadId ? String(leadId) === String(user.id) : false;
 	}, [selectedProject, user?.id]);
 
+	const taskAssigneeIds = useMemo(() => {
+		const rawIds = taskDetailTarget?.nguoi_nhan_ids || taskForm?.nguoi_nhan_ids || "";
+		return String(rawIds)
+			.split(",")
+			.map((item) => Number(item.trim()))
+			.filter((item) => Number.isFinite(item) && item > 0);
+	}, [taskDetailTarget?.nguoi_nhan_ids, taskForm?.nguoi_nhan_ids]);
+	const isTaskAssignee = Boolean(user?.id && taskAssigneeIds.includes(Number(user.id)));
 	const canAssignOthers = isAdmin || isProjectLead;
+	const canManageTaskSteps = isAdmin || isProjectLead || isTaskAssignee;
 	const isCreatingTask = taskFormOpen && !taskEditingId;
 	const canSelectTaskAssignee = canAssignOthers;
-	const canSaveTask = !taskProjectsLoading && !taskEmployeesLoading && (!isCreatingTask || isAdmin || isProjectLead);
+	const canSaveTask = !taskProjectsLoading && !taskEmployeesLoading && !isInactiveProject(selectedProject) && (!isCreatingTask || isAdmin || isProjectLead);
 	const isPendingApproval = useMemo(() => {
 		const normalize = (value) =>
 			String(value || "")
@@ -265,7 +290,9 @@ function TasksPage({
 		const displayStatus = normalize(taskDetailTarget?.trang_thai_hien_thi || taskDetailTarget?.trang_thai);
 		return approvalStatus.includes("cho duyet") || displayStatus.includes("cho duyet");
 	}, [taskDetailTarget]);
-	const canApproveTask = Boolean(taskDetailTarget?.id && isAdmin && isPendingApproval);
+	const isAssignedStepView = Boolean(assignedStepId);
+	const canEditTaskDetail = !isAssignedStepView;
+	const canApproveTask = Boolean(taskDetailTarget?.id && (isAdmin || isProjectLead) && isPendingApproval && canEditTaskDetail);
 
 	useEffect(() => {
 		if (isAdmin) {
@@ -345,7 +372,7 @@ function TasksPage({
 							<option value="">Tất cả dự án</option>
 							{taskProjects.map((project) => (
 								<option key={project.id} value={project.id}>
-									{project.ten_du_an}
+									{project.ten_du_an}{isInactiveProject(project) ? " - Ngừng hoạt động" : ""}
 								</option>
 							))}
 						</select>
@@ -446,8 +473,8 @@ function TasksPage({
 								>
 									<option value="">Chọn dự án</option>
 									{taskProjects.map((project) => (
-										<option key={project.id} value={project.id}>
-											{project.ten_du_an}
+										<option key={project.id} value={project.id} disabled={isCreatingTask && isInactiveProject(project)}>
+											{project.ten_du_an}{isInactiveProject(project) ? " - Ngừng hoạt động" : ""}
 										</option>
 									))}
 								</select>
@@ -489,6 +516,7 @@ function TasksPage({
 								<label>Ưu tiên</label>
 								<select
 									value={taskForm.muc_do_uu_tien}
+												disabled={!canEditTaskDetail}
 									onChange={(event) =>
 										setTaskForm({
 											...taskForm,
@@ -589,6 +617,55 @@ function TasksPage({
 					{taskStatus.message}
 				</div>
 			) : null}
+			{!isAdmin && assignedSubtasks.length > 0 ? (
+				<div className="admin-table task-table">
+					<h3>Việc con được giao cho tôi</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Mã bước</th>
+								<th>Việc con</th>
+								<th>Công việc cha</th>
+								<th>Dự án</th>
+								<th>Hạn</th>
+								<th>Trạng thái</th>
+							</tr>
+						</thead>
+						<tbody>
+							{assignedSubtasks.map((step) => (
+								<tr
+									key={step.id}
+									onClick={() => openTaskDetail({
+										id: step.cong_viec_id,
+										ten_cong_viec: step.ten_cong_viec,
+										mo_ta: step.cong_viec_mo_ta || "",
+										du_an_id: step.du_an_id,
+										ten_du_an: step.ten_du_an,
+										ngay_bat_dau: step.cong_viec_ngay_bat_dau,
+										han_hoan_thanh: step.cong_viec_han_hoan_thanh,
+										muc_do_uu_tien: step.cong_viec_muc_do_uu_tien,
+										trang_thai: step.cong_viec_trang_thai,
+										trang_thai_duyet: step.cong_viec_trang_thai_duyet,
+										tai_lieu_cv: step.cong_viec_tai_lieu_cv,
+										nguoi_giao_id: step.cong_viec_nguoi_giao_id,
+										nguoi_nhan: step.cong_viec_nguoi_nhan || "",
+										nguoi_nhan_ids: step.cong_viec_nguoi_nhan_ids || "",
+									}, { assignedStepId: step.id })}
+									style={{ cursor: "pointer" }}
+								>
+									<td><span className="data-emphasis">{step.id}</span></td>
+									<td>{step.ten_buoc}</td>
+									<td>{step.ten_cong_viec || `#${step.cong_viec_id}`}</td>
+									<td>{step.ten_du_an || "-"}</td>
+									<td>{step.ngay_ket_thuc || "-"}</td>
+									<td><span className={`status-badge ${statusClassMap[step.trang_thai] || ""}`}>{step.trang_thai || "-"}</span></td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+			) : null}
+
 			<div className="admin-table task-table">
 				<table>
 					<thead>
@@ -596,6 +673,7 @@ function TasksPage({
 							<th>ID</th>
 							<th>Tên công việc</th>
 							<th>Dự án</th>
+							<th>Người giao</th>
 							<th>Người nhận</th>
 							<th>Hạn chót</th>
 							<th>Tiến độ</th>
@@ -605,7 +683,7 @@ function TasksPage({
 					<tbody>
 						{taskLoading ? (
 							<tr>
-								<td colSpan="7">Đang tải dữ liệu...</td>
+								<td colSpan="8">Đang tải dữ liệu...</td>
 							</tr>
 						) : (
 							taskRows.map((row) => (
@@ -618,6 +696,9 @@ function TasksPage({
 									</td>
 									<td>
 										<span className="data-chip">{row.ten_du_an || "-"}</span>
+									</td>
+									<td>
+										<span className="data-chip muted">{row.nguoi_giao || "-"}</span>
 									</td>
 									<td>
 										<span className="data-chip muted">{row.nguoi_nhan || "-"}</span>
@@ -642,7 +723,7 @@ function TasksPage({
 						)}
 						{!taskLoading && taskRows.length === 0 ? (
 							<tr>
-								<td colSpan="7">Không có dữ liệu</td>
+								<td colSpan="8">Không có dữ liệu</td>
 							</tr>
 						) : null}
 					</tbody>
@@ -702,6 +783,7 @@ function TasksPage({
 										<input 
 											type="text" 
 											value={taskForm.ten_cong_viec} 
+											readOnly={!canEditTaskDetail}
 											onChange={(event) =>
 												setTaskForm({
 													...taskForm,
@@ -714,6 +796,7 @@ function TasksPage({
 										<label>Mức độ ưu tiên</label>
 										<select
 											value={taskForm.muc_do_uu_tien}
+											disabled={!canEditTaskDetail}
 											onChange={(event) =>
 												setTaskForm({
 													...taskForm,
@@ -731,6 +814,7 @@ function TasksPage({
 										<textarea 
 											rows="4" 
 											value={taskForm.mo_ta} 
+												readOnly={!canEditTaskDetail}
 											onChange={(event) =>
 												setTaskForm({
 													...taskForm,
@@ -744,6 +828,7 @@ function TasksPage({
 										<input 
 											type="date" 
 											value={taskForm.ngay_bat_dau} 
+												readOnly={!canEditTaskDetail}
 											onChange={(event) =>
 												setTaskForm({
 													...taskForm,
@@ -757,6 +842,7 @@ function TasksPage({
 										<input 
 											type="date" 
 											value={taskForm.han_hoan_thanh} 
+												readOnly={!canEditTaskDetail}
 											onChange={(event) =>
 												setTaskForm({
 													...taskForm,
@@ -822,6 +908,7 @@ function TasksPage({
 											type="text" 
 											placeholder="Chưa có link tài liệu" 
 											value={taskForm.tai_lieu_cv} 
+												readOnly={!canEditTaskDetail}
 											onChange={(event) =>
 												setTaskForm({
 													...taskForm,
@@ -856,15 +943,19 @@ function TasksPage({
 									<div className="progress-bar">
 										<div className="progress-fill" style={{ width: `${workflowProgress}%` }}>{workflowProgress}%</div>
 									</div>
+									{canManageTaskSteps ? (
 									<button type="button" className="btn-add-subtask" onClick={openSubtaskModal}>+ Thêm việc con</button>
+								) : null}
 									<div className="subtask-list">
 										{taskWorkflowLoading ? (
 											<div className="subtask-item">
 												<span>Đang tải...</span>
 											</div>
 										) : taskWorkflowSteps && taskWorkflowSteps.length > 0 ? (
-											taskWorkflowSteps.map((step) => (
-												<div key={step.id} className="subtask-item">
+										taskWorkflowSteps.map((step) => {
+											const canEditThisStep = canEditTaskDetail || Number(step.id) === Number(assignedStepId);
+											return (
+												<div key={step.id} className={`subtask-item ${Number(step.id) === Number(assignedStepId) ? "is-assigned-step" : ""}`}>
 													<span className="status-badge">
 														{step.trang_thai || "Chưa bắt đầu"}
 													</span>
@@ -878,17 +969,22 @@ function TasksPage({
 																{step.ngay_ket_thuc && `Đến: ${step.ngay_ket_thuc}`}
 															</small>
 														)}
-														<div className="subtask-actions">
-															<button type="button" className="btn-subtask-action" onClick={() => openSubtaskModal(step)}>
-																Sửa
-															</button>
-															<button type="button" className="btn-subtask-action danger" onClick={() => handleDeleteSubtask(step)}>
-																Xóa
-															</button>
-														</div>
+														{canEditThisStep ? (
+															<div className="subtask-actions">
+																<button type="button" className="btn-subtask-action" onClick={() => openSubtaskModal(step)}>
+																	Sửa
+																</button>
+																{canEditTaskDetail ? (
+																	<button type="button" className="btn-subtask-action danger" onClick={() => handleDeleteSubtask(step)}>
+																		Xóa
+																	</button>
+																) : null}
+															</div>
+														) : null}
 													</div>
 												</div>
-											))
+											);
+										})
 										) : (
 											<div className="subtask-item">
 												<span>Chưa có việc con nào</span>
@@ -944,9 +1040,11 @@ function TasksPage({
 											{taskFormStatus.message}
 										</div>
 									) : null}
-									<button type="button" onClick={() => submitTaskForm(true)} className="btn-primary">
-										Lưu thay đổi
-									</button>
+									{canEditTaskDetail ? (
+										<button type="button" onClick={() => submitTaskForm(true)} className="btn-primary">
+											Lưu thay đổi
+										</button>
+									) : null}
 									<button 
 										type="button" 
 										onClick={closeTaskDetail}
@@ -989,6 +1087,7 @@ function TasksPage({
 									}
 								/>
 							</div>
+								{canManageTaskSteps ? (
 							<div className="form-group full">
 								<label>Người nhận</label>
 								<div className="subtask-recipient-row">
@@ -1028,7 +1127,8 @@ function TasksPage({
 										<span className="pill-placeholder">Chưa chọn người nhận</span>
 									)}
 								</div>
-							</div>
+								</div>
+								) : null}
 							<div className="form-group full">
 								<label>Trạng thái</label>
 								<select

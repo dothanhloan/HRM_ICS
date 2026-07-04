@@ -95,6 +95,7 @@ function App() {
 	const [projectDepartmentsLoading, setProjectDepartmentsLoading] = useState(false);
 	const [projectDeleteTarget, setProjectDeleteTarget] = useState(null);
 	const [taskRows, setTaskRows] = useState([]);
+	const [assignedSubtasks, setAssignedSubtasks] = useState([]);
 	const [taskTotal, setTaskTotal] = useState(0);
 	const [taskQuery, setTaskQuery] = useState("");
 	const [taskStatusFilter, setTaskStatusFilter] = useState("");
@@ -115,6 +116,7 @@ function App() {
 	const [taskProjectsLoading, setTaskProjectsLoading] = useState(false);
 	const [taskDetailOpen, setTaskDetailOpen] = useState(false);
 	const [taskDetailTarget, setTaskDetailTarget] = useState(null);
+	const [assignedStepId, setAssignedStepId] = useState(null);
 	const [taskEditingId, setTaskEditingId] = useState(null);
 	const [taskWorkflowSteps, setTaskWorkflowSteps] = useState([]);
 	const [taskWorkflowLoading, setTaskWorkflowLoading] = useState(false);
@@ -285,6 +287,7 @@ function App() {
 		setProjectDepartments([]);
 		setProjectDeleteTarget(null);
 		setTaskRows([]);
+		setAssignedSubtasks([]);
 		setTaskTotal(0);
 		setTaskQuery("");
 		setTaskStatusFilter("");
@@ -950,7 +953,7 @@ function App() {
 			}
 			params.set("page", String(nextPage));
 			params.set("page_size", String(projectPageSize));
-			const actor = canManageProjects ? "admin" : "employee";
+			const actor = isAdmin ? "admin" : "employee";
 			params.set("actor", actor);
 			if (actor === "employee" && user?.id) {
 				params.set("nhan_vien_id", String(user.id));
@@ -1015,6 +1018,9 @@ function App() {
 				throw new Error(data.detail || "Không thể tải danh sách công việc");
 			}
 			setTaskRows(data.data || []);
+			if (!canManageTasks) {
+				fetchAssignedSubtasks();
+			}
 			setTaskTotal(data.total || 0);
 			setTaskTotalPages(data.total_pages || 0);
 			setTaskPage(data.page || nextPage);
@@ -1025,6 +1031,26 @@ function App() {
 			setTaskStatus({ type: "error", message: error.message });
 		} finally {
 			setTaskLoading(false);
+		}
+	};
+
+	const fetchAssignedSubtasks = async () => {
+		if (!user?.id) {
+			setAssignedSubtasks([]);
+			return;
+		}
+		try {
+			const params = new URLSearchParams({ nhan_vien_id: String(user.id) });
+			const response = await fetch(
+				`${API_BASE}/api/v1/cong_viec_quy_trinh/duoc_giao/danh_sach?${params.toString()}`
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.detail || "Khong the tai danh sach viec con duoc giao");
+			}
+			setAssignedSubtasks(data.data || []);
+		} catch (error) {
+			setTaskStatus({ type: "error", message: error.message });
 		}
 	};
 
@@ -1261,7 +1287,7 @@ function App() {
 				page: "1",
 				page_size: "200",
 			});
-			const actor = canManageProjects ? "admin" : "employee";
+			const actor = isAdmin ? "admin" : "employee";
 			params.set("actor", actor);
 			if (actor === "employee" && user?.id) {
 				params.set("nhan_vien_id", String(user.id));
@@ -1313,6 +1339,15 @@ function App() {
 		}
 	};
 
+	const isInactiveProject = (project) => {
+		const normalized = String(project?.trang_thai_duan || "")
+			.toLowerCase()
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "");
+		return normalized.includes("ngung hoat dong");
+	};
+
+
 	const openCreateTask = async () => {
 		resetTaskForm();
 		setTaskEditingId(null);
@@ -1324,12 +1359,13 @@ function App() {
 		const availableProjects = canManageTasks
 			? await fetchTaskProjects()
 			: await fetchTaskLeaderProjects();
-		if (availableProjects.length === 0) {
+		const creatableProjects = availableProjects.filter((project) => !isInactiveProject(project));
+		if (creatableProjects.length === 0) {
 			setTaskStatus({
 				type: "error",
 				message: canManageTasks
-					? "Chua co du an nao nen khong the tao cong viec."
-					: "Ban chua phu trach du an nao nen khong the tao cong viec.",
+					? "Khong co du an dang hoat dong nen khong the tao cong viec."
+					: "Ban chua phu trach du an dang hoat dong nao nen khong the tao cong viec.",
 			});
 			return;
 		}
@@ -1399,6 +1435,16 @@ function App() {
 			setTaskFormStatus({ type: "error", message: "Vui lòng chọn dự án." });
 			return;
 		}
+		const selectedProject = taskProjects.find(
+			(project) => String(project.id) === String(taskForm.du_an_id)
+		);
+		if (isInactiveProject(selectedProject)) {
+			setTaskFormStatus({
+				type: "error",
+				message: "Du an da ngung hoat dong, khong the tao hoac cap nhat cong viec.",
+			});
+			return;
+		}
 		if (!taskForm.ngay_bat_dau || !taskForm.han_hoan_thanh) {
 			setTaskFormStatus({ type: "error", message: "Vui lòng chọn thời gian." });
 			return;
@@ -1423,9 +1469,6 @@ function App() {
 		}
 
 		if (!isEditingTask && !canManageTasks) {
-			const selectedProject = taskProjects.find(
-				(project) => String(project.id) === String(taskForm.du_an_id)
-			);
 			const leadId = selectedProject?.lead_id ?? selectedProject?.truong_du_an_id;
 			if (!leadId || String(leadId) !== String(user.id)) {
 				setTaskFormStatus({
@@ -1539,8 +1582,9 @@ function App() {
 		}
 	};
 
-	const openTaskDetail = (row) => {
+	const openTaskDetail = (row, options = {}) => {
 		const assigneeIds = parseTaskIdList(row.nguoi_nhan_ids);
+		setAssignedStepId(options.assignedStepId || null);
 		setTaskDetailTarget(row);
 		setTaskDetailOpen(true);
 		setTaskEditingId(row.id);
@@ -1567,6 +1611,7 @@ function App() {
 	const closeTaskDetail = () => {
 		setTaskDetailOpen(false);
 		setTaskDetailTarget(null);
+		setAssignedStepId(null);
 		setTaskEditingId(null);
 		setTaskUploadFile(null);
 		setTaskHistoryLogs([]);
@@ -1594,7 +1639,7 @@ function App() {
 		}
 	};
 
-	const submitTaskStepUpdate = async (stepId, payload) => {
+	const submitTaskStepUpdate = async (stepId, payload, taskId) => {
 		try {
 			const response = await fetch(`${API_BASE}/api/v1/cong_viec_quy_trinh/${stepId}/cap_nhat`, {
 				method: "PUT",
@@ -1605,9 +1650,15 @@ function App() {
 			if (!response.ok) {
 				throw new Error(data.detail || "Khong the cap nhat buoc quy trinh");
 			}
+			const targetTaskId = taskId || payload.cong_viec_id;
 			fetchTasks(taskPage);
-			fetchTaskWorkflowSteps(payload.cong_viec_id);
-			fetchTaskHistory(payload.cong_viec_id);
+			if (targetTaskId) {
+				fetchTaskWorkflowSteps(targetTaskId);
+				fetchTaskHistory(targetTaskId);
+			}
+			if (!canManageTasks) {
+				fetchAssignedSubtasks();
+			}
 			setTaskStatus({ type: "success", message: "Cap nhat buoc quy trinh thanh cong." });
 			return data;
 		} catch (error) {
@@ -2242,7 +2293,7 @@ function App() {
 					path="/projects"
 					element={
 						<ProjectsPage
-							isAdmin={canManageProjects}
+							isAdmin={isAdmin}
 							projectRows={projectRows}
 							projectTotal={projectTotal}
 							projectQuery={projectQuery}
@@ -2290,6 +2341,7 @@ function App() {
 							user={user}
 							isAdmin={canManageTasks}
 							taskRows={taskRows}
+								assignedSubtasks={assignedSubtasks}
 							taskTotal={taskTotal}
 							taskQuery={taskQuery}
 							taskStatusFilter={taskStatusFilter}
@@ -2331,6 +2383,7 @@ function App() {
 							setTaskPageSize={setTaskPageSize}
 							taskDetailOpen={taskDetailOpen}
 							taskDetailTarget={taskDetailTarget}
+						assignedStepId={assignedStepId}
 							openTaskDetail={openTaskDetail}
 							closeTaskDetail={closeTaskDetail}
 							taskWorkflowSteps={taskWorkflowSteps}

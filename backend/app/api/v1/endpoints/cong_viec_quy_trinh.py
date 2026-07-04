@@ -1,4 +1,4 @@
-from datetime import date
+﻿from datetime import date
 from typing import Optional
 
 from fastapi import Depends, HTTPException
@@ -37,6 +37,67 @@ class CongViecQuyTrinhUpdate(BaseModel):
 	nguoi_thay_doi_id: Optional[int] = None
 
 router = create_crud_router(CongViecQuyTrinh, prefix='/cong_viec_quy_trinh', tags=['cong_viec_quy_trinh'])
+
+
+@router.get('/duoc_giao/danh_sach')
+def list_assigned_steps(nhan_vien_id: int, db: Session = Depends(get_db)) -> dict:
+	rows = db.execute(
+		text(
+			'''
+			SELECT
+				cqt.id,
+				cqt.cong_viec_id,
+				cqt.ten_buoc,
+				cqt.mo_ta,
+				cqt.trang_thai,
+				cqt.ngay_bat_dau,
+				cqt.ngay_ket_thuc,
+				cqt.tai_lieu_link,
+				cqt.tai_lieu_file,
+				cv.ten_cong_viec,
+				cv.mo_ta AS cong_viec_mo_ta,
+				cv.du_an_id,
+				da.ten_du_an,
+				cv.ngay_bat_dau AS cong_viec_ngay_bat_dau,
+				cv.han_hoan_thanh AS cong_viec_han_hoan_thanh,
+				cv.muc_do_uu_tien AS cong_viec_muc_do_uu_tien,
+				cv.trang_thai AS cong_viec_trang_thai,
+				cv.trang_thai_duyet AS cong_viec_trang_thai_duyet,
+				cv.tai_lieu_cv AS cong_viec_tai_lieu_cv,
+				cv.nguoi_giao_id AS cong_viec_nguoi_giao_id,
+				GROUP_CONCAT(DISTINCT nv.ho_ten SEPARATOR ', ') AS nguoi_nhan,
+				(
+					SELECT GROUP_CONCAT(DISTINCT cvnn.nhan_vien_id SEPARATOR ',')
+					FROM cong_viec_nguoi_nhan cvnn
+					WHERE cvnn.cong_viec_id = cv.id
+				) AS cong_viec_nguoi_nhan_ids,
+				(
+					SELECT GROUP_CONCAT(DISTINCT nvcn.ho_ten SEPARATOR ', ')
+					FROM cong_viec_nguoi_nhan cvnn
+					JOIN nhanvien nvcn ON nvcn.id = cvnn.nhan_vien_id
+					WHERE cvnn.cong_viec_id = cv.id
+				) AS cong_viec_nguoi_nhan,
+				GROUP_CONCAT(DISTINCT nv.ho_ten SEPARATOR ', ') AS buoc_nguoi_nhan,
+				GROUP_CONCAT(DISTINCT qtnn.nhan_id SEPARATOR ',') AS nguoi_nhan_ids
+			FROM cong_viec_quy_trinh cqt
+			JOIN quy_trinh_nguoi_nhan mine
+			  ON mine.step_id = cqt.id
+			 AND mine.nhan_id = :nhan_vien_id
+			JOIN cong_viec cv ON cv.id = cqt.cong_viec_id
+			LEFT JOIN du_an da ON da.id = cv.du_an_id
+			LEFT JOIN quy_trinh_nguoi_nhan qtnn ON qtnn.step_id = cqt.id
+			LEFT JOIN nhanvien nv ON nv.id = qtnn.nhan_id
+			GROUP BY cqt.id, cqt.cong_viec_id, cqt.ten_buoc, cqt.mo_ta, cqt.trang_thai,
+				cqt.ngay_bat_dau, cqt.ngay_ket_thuc, cqt.tai_lieu_link, cqt.tai_lieu_file,
+				cv.ten_cong_viec, cv.mo_ta, cv.du_an_id, da.ten_du_an, cv.ngay_bat_dau,
+				cv.han_hoan_thanh, cv.muc_do_uu_tien, cv.trang_thai, cv.trang_thai_duyet,
+				cv.tai_lieu_cv, cv.nguoi_giao_id
+			ORDER BY cqt.ngay_ket_thuc IS NULL, cqt.ngay_ket_thuc ASC, cqt.id DESC
+			'''
+		),
+		{'nhan_vien_id': nhan_vien_id},
+	).mappings().all()
+	return {'data': [dict(row) for row in rows], 'total': len(rows)}
 
 
 def _add_task_history(db: Session, cong_viec_id: int, nguoi_thay_doi_id: Optional[int], message: str) -> None:
@@ -117,22 +178,30 @@ def _get_step_access(step_id: int, actor_id: Optional[int], db: Session):
 		{'step_id': step_id, 'actor_id': actor_id},
 	).mappings().first()
 
-def _assert_task_leader_or_admin(cong_viec_id: int, actor_id: Optional[int], db: Session) -> None:
+def _assert_task_manager(cong_viec_id: int, actor_id: Optional[int], db: Session) -> None:
 	row = db.execute(
 		text(
 			'''
-			SELECT da.lead_id
+			SELECT
+				da.lead_id,
+				EXISTS (
+					SELECT 1
+					FROM cong_viec_nguoi_nhan cvnn
+					WHERE cvnn.cong_viec_id = cv.id
+					  AND cvnn.nhan_vien_id = :actor_id
+				) AS is_task_assignee
 			FROM cong_viec cv
 			JOIN du_an da ON da.id = cv.du_an_id
 			WHERE cv.id = :cong_viec_id
 			'''
 		),
-		{'cong_viec_id': cong_viec_id},
+		{'cong_viec_id': cong_viec_id, 'actor_id': actor_id},
 	).mappings().first()
 	if not row:
 		raise HTTPException(status_code=404, detail='Task not found')
-	if not _is_admin(actor_id, db) and int(row['lead_id'] or 0) != int(actor_id or 0):
-		raise HTTPException(status_code=403, detail='Chi leader du an moi duoc quan ly buoc cong viec')
+	if _is_admin(actor_id, db) or int(row['lead_id'] or 0) == int(actor_id or 0) or row['is_task_assignee']:
+		return
+	raise HTTPException(status_code=403, detail='Chi leader du an hoac nguoi duoc giao cong viec moi duoc quan ly buoc cong viec')
 
 def _assert_step_assignee_or_leader(step_id: int, actor_id: Optional[int], db: Session) -> None:
 	access = _get_step_access(step_id, actor_id, db)
@@ -156,7 +225,7 @@ def create_step(payload: CongViecQuyTrinhCreate, db: Session = Depends(get_db)) 
 	).scalar()
 	if not cong_viec_exists:
 		raise HTTPException(status_code=404, detail='Task not found')
-	_assert_task_leader_or_admin(payload.cong_viec_id, payload.nguoi_thay_doi_id, db)
+	_assert_task_manager(payload.cong_viec_id, payload.nguoi_thay_doi_id, db)
 
 	if payload.ngay_bat_dau:
 		try:
@@ -176,7 +245,7 @@ def create_step(payload: CongViecQuyTrinhCreate, db: Session = Depends(get_db)) 
 		'cong_viec_id': payload.cong_viec_id,
 		'ten_buoc': payload.ten_buoc.strip(),
 		'mo_ta': (payload.mo_ta or '').strip() or None,
-		'trang_thai': payload.trang_thai or 'Chưa bắt đầu',
+		'trang_thai': payload.trang_thai or 'ChÆ°a báº¯t Ä‘áº§u',
 		'ngay_bat_dau': payload.ngay_bat_dau,
 		'ngay_ket_thuc': payload.ngay_ket_thuc,
 		'tai_lieu_link': (payload.tai_lieu_link or '').strip() or None,
@@ -234,7 +303,7 @@ def update_step(step_id: int, payload: CongViecQuyTrinhUpdate, db: Session = Dep
 	if not current:
 		raise HTTPException(status_code=404, detail='Step not found')
 	if payload.nguoi_nhan_ids is not None or payload.cong_viec_id is not None:
-		_assert_task_leader_or_admin(int(current['cong_viec_id']), payload.nguoi_thay_doi_id, db)
+		_assert_task_manager(int(current['cong_viec_id']), payload.nguoi_thay_doi_id, db)
 	else:
 		_assert_step_assignee_or_leader(step_id, payload.nguoi_thay_doi_id, db)
 
@@ -305,7 +374,7 @@ def update_step(step_id: int, payload: CongViecQuyTrinhUpdate, db: Session = Dep
 				COUNT(*) AS total_steps,
 				SUM(
 					CASE
-						WHEN LOWER(COALESCE(trang_thai, '')) LIKE '%hoàn thành%'
+						WHEN LOWER(COALESCE(trang_thai, '')) LIKE '%hoÃ n thÃ nh%'
 						  OR LOWER(COALESCE(trang_thai, '')) LIKE '%hoan thanh%'
 						  OR LOWER(COALESCE(trang_thai, '')) IN ('completed', 'done')
 						THEN 1
@@ -314,7 +383,7 @@ def update_step(step_id: int, payload: CongViecQuyTrinhUpdate, db: Session = Dep
 				) AS completed_steps,
 				SUM(
 					CASE
-						WHEN LOWER(COALESCE(trang_thai, '')) LIKE '%đang%'
+						WHEN LOWER(COALESCE(trang_thai, '')) LIKE '%Ä‘ang%'
 						  OR LOWER(COALESCE(trang_thai, '')) LIKE '%dang%'
 						  OR LOWER(COALESCE(trang_thai, '')) IN ('in_progress', 'doing')
 						THEN 1
@@ -392,7 +461,7 @@ def delete_step(step_id: int, nguoi_thay_doi_id: Optional[int] = None, db: Sessi
 	).mappings().first()
 	if not current:
 		raise HTTPException(status_code=404, detail='Step not found')
-	_assert_task_leader_or_admin(int(current['cong_viec_id']), nguoi_thay_doi_id, db)
+	_assert_task_manager(int(current['cong_viec_id']), nguoi_thay_doi_id, db)
 
 	_add_task_history(
 		db,
@@ -403,3 +472,4 @@ def delete_step(step_id: int, nguoi_thay_doi_id: Optional[int] = None, db: Sessi
 	db.execute(text('DELETE FROM cong_viec_quy_trinh WHERE id = :id'), {'id': step_id})
 	db.commit()
 	return None
+

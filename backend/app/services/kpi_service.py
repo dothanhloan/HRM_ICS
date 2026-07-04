@@ -31,6 +31,12 @@ def _month_range(nam: int, thang: int) -> tuple[date, date]:
         return date(nam, thang, 1), date(nam + 1, 1, 1)
     return date(nam, thang, 1), date(nam, thang + 1, 1)
 
+def ensure_kpi_period_has_ended(nam: int, thang: int, today: Optional[date] = None) -> None:
+    _, end_date = _month_range(nam, thang)
+    current_date = today or date.today()
+    if current_date < end_date:
+        raise ValueError("Chỉ được chạy KPI cho các tháng đã kết thúc")
+
 
 def _load_weight(db: Session, key: str, default: Decimal) -> Decimal:
     value = db.execute(
@@ -190,7 +196,7 @@ def calculate_kpi(db: Session, actor_id: int, actor_role: str, thang: int, nam: 
         text(
             """
             SELECT AVG(task_count) FROM (
-                SELECT COUNT(cvnn.id) AS task_count
+                SELECT COUNT(cv.id) AS task_count
                 FROM nhanvien n
                 LEFT JOIN cong_viec_nguoi_nhan cvnn ON cvnn.nhan_vien_id = n.id
                 LEFT JOIN cong_viec cv ON cv.id = cvnn.cong_viec_id
@@ -320,6 +326,7 @@ def run_kpi_period(db: Session, actor_id: int, actor_role: str, thang: int, nam:
     payroll_manager = has_permission_group(db, context.actor_id, ["luong", "salary", "payroll"])
     if not payroll_manager:
         raise ValueError("Khong co quyen quan ly KPI")
+    ensure_kpi_period_has_ended(nam, thang)
 
     employee_rows = db.execute(
         text(
@@ -366,6 +373,12 @@ def list_kpi_records(
     page_size: int = 20,
 ) -> dict:
     context = load_actor_context(db, actor_id, actor_role)
+    if thang is not None and nam is not None:
+        try:
+            ensure_kpi_period_has_ended(nam, thang)
+        except ValueError:
+            return {"data": [], "total": 0, "page": page, "page_size": page_size}
+
     manager_view = has_permission_group(db, context.actor_id, ["luong", "salary", "payroll"])
     resolved_target = target_employee_id
     if not manager_view:

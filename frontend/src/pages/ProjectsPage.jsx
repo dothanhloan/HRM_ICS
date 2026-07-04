@@ -48,6 +48,13 @@ function ProjectsPage({
 		"Khác",
 	];
 	const priorityOptions = ["Thấp", "Trung bình", "Cao"];
+	const projectStatusOptions = [
+		"Chưa bắt đầu",
+		"Đang thực hiện",
+		"Đã hoàn thành",
+		"Trễ hạn",
+		"Ngừng hoạt động",
+	];
 
 	const leadOptions = useMemo(() => {
 		return projectEmployees.map((employee) => ({
@@ -55,6 +62,19 @@ function ProjectsPage({
 			name: employee.ho_ten || employee.email || `Nhân viên #${employee.id}`,
 		}));
 	}, [projectEmployees]);
+
+
+	const normalizeStatusText = (value) => {
+		const text = String(value || "").trim();
+		const normalized = text
+			.toLowerCase()
+			.normalize("NFD")
+			.replace(/[̀-ͯ]/g, "");
+		if (normalized.includes("ngung hoat dong") || normalized.includes("ng") && normalized.includes("ho") && normalized.includes("t")) {
+			return "Ng\u1eebng ho\u1ea1t \u0111\u1ed9ng";
+		}
+		return text;
+	};
 
 	const getInitials = (name) =>
 		String(name || "?")
@@ -70,8 +90,6 @@ function ProjectsPage({
 		if (normalized.includes("trung")) return "medium";
 		return "low";
 	};
-
-	const getProjectProgress = (row) => Number(row.tien_do ?? row.tien_do_du_an ?? 100);
 
 	const resetProjectFilters = () => {
 		setProjectQuery("");
@@ -110,7 +128,7 @@ function ProjectsPage({
 				.replace(/[\u0300-\u036f]/g, "");
 		return projectRows.reduce(
 			(acc, row) => {
-				const status = normalize(row.trang_thai_duan);
+				const status = normalize(normalizeStatusText(row.trang_thai_duan));
 				if (status.includes("dang thuc hien")) {
 					acc.inProgress += 1;
 				} else if (status.includes("da hoan thanh")) {
@@ -119,10 +137,12 @@ function ProjectsPage({
 					acc.overdue += 1;
 				} else if (status.includes("chua bat dau")) {
 					acc.notStarted += 1;
+				} else if (status.includes("ngung hoat dong")) {
+					acc.inactive += 1;
 				}
 				return acc;
 			},
-			{ inProgress: 0, completed: 0, overdue: 0, notStarted: 0 }
+			{ inProgress: 0, completed: 0, overdue: 0, notStarted: 0, inactive: 0 }
 		);
 	}, [projectRows]);
 
@@ -136,6 +156,8 @@ function ProjectsPage({
 			"Da hoan thanh": "status-complete",
 			"Trễ hạn": "status-overdue",
 			"Tre han": "status-overdue",
+			"Ngừng hoạt động": "status-muted",
+			"Ngung hoat dong": "status-muted",
 		}),
 		[]
 	);
@@ -176,6 +198,7 @@ function ProjectsPage({
 							<option value="Đang thực hiện">Đang thực hiện</option>
 							<option value="Đã hoàn thành">Đã hoàn thành</option>
 							<option value="Trễ hạn">Trễ hạn</option>
+							<option value="Ngừng hoạt động">Ngừng hoạt động</option>
 						</select>
 						<select
 							value={projectPriorityFilter}
@@ -249,6 +272,11 @@ function ProjectsPage({
 					<span>Trễ hạn</span>
 					<strong>{statusCounts.overdue}</strong>
 					<small>Cần xử lý</small>
+				</div>
+				<div className="project-stat-card task-stat-card muted">
+					<span>Ngừng hoạt động</span>
+					<strong>{statusCounts.inactive}</strong>
+					<small>Chỉ xem thông tin</small>
 				</div>
 			</div>
 
@@ -334,6 +362,25 @@ function ProjectsPage({
 								>
 									<option value="">Chọn mức độ</option>
 									{priorityOptions.map((item) => (
+										<option key={item} value={item}>
+											{item}
+										</option>
+									))}
+								</select>
+							</div>
+							<div className="form-group">
+								<label>Trạng thái dự án</label>
+								<select
+									disabled={projectFormReadOnly}
+									value={normalizeStatusText(projectForm.trang_thai_duan) || "Đang thực hiện"}
+									onChange={(event) =>
+										setProjectForm({
+											...projectForm,
+											trang_thai_duan: event.target.value,
+										})
+									}
+								>
+									{projectStatusOptions.map((item) => (
 										<option key={item} value={item}>
 											{item}
 										</option>
@@ -442,7 +489,6 @@ function ProjectsPage({
 						<div className="project-empty">Không có dữ liệu</div>
 					) : (
 						projectRows.map((row) => {
-							const progress = getProjectProgress(row);
 							return (
 								<div
 									className="project-card project-card-clickable"
@@ -490,16 +536,7 @@ function ProjectsPage({
 											<strong>{row.ngay_ket_thuc || "-"}</strong>
 										</div>
 									</div>
-									<div className="project-progress">
-										<div>
-											<span>Tiến độ</span>
-											<strong>{progress}%</strong>
-										</div>
-										<div className="project-progress-track">
-											<span style={{ width: `${Math.min(Math.max(progress, 0), 100)}%` }} />
-										</div>
-									</div>
-									<div className="project-status-bar">{row.trang_thai_duan || "Đang thực hiện"}</div>
+									<div className="project-status-bar">{normalizeStatusText(row.trang_thai_duan) || "-"}</div>
 									<div className="project-card-actions">
 										<button
 											type="button"
@@ -578,10 +615,10 @@ function ProjectsPage({
 										<td>
 											<span
 												className={`status-pill ${
-													statusClassMap[row.trang_thai_duan] || "status-muted"
+													statusClassMap[normalizeStatusText(row.trang_thai_duan)] || "status-muted"
 												}`}
 											>
-												{row.trang_thai_duan || "-"}
+												{normalizeStatusText(row.trang_thai_duan) || "-"}
 											</span>
 										</td>
 										<td>

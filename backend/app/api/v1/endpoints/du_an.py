@@ -67,6 +67,8 @@ def list_du_an(
 			"đã hoàn thành": "Đã hoàn thành",
 			"tre han": "Trễ hạn",
 			"trễ hạn": "Trễ hạn",
+			"ngung hoat dong": "Ngừng hoạt động",
+			"ngừng hoạt động": "Ngừng hoạt động",
 		}
 		conditions.append("d.trang_thai_duan = :trang_thai")
 		params["trang_thai"] = status_map.get(normalized, trang_thai)
@@ -235,23 +237,15 @@ def delete_du_an(du_an_id: int, force: bool = False, db: Session = Depends(get_d
 	if not row:
 		raise HTTPException(status_code=404, detail="Not found")
 
-	tasks = db.execute(
-		text("SELECT COUNT(*) FROM cong_viec WHERE du_an_id = :id"),
-		{"id": du_an_id},
-	).scalar() or 0
-	if tasks > 0:
-		raise HTTPException(status_code=400, detail="Du an dang co cong viec")
-
-	if (row.get("trang_thai_duan") or "").lower() == "đang thực hiện" and not force:
+	if (row.get("trang_thai_duan") or "").lower() == "\u0111ang th\u1ef1c hi\u1ec7n" and not force:
 		raise HTTPException(status_code=400, detail="Du an dang hoat dong, can xac nhan")
 
 	db.execute(
-		text("UPDATE du_an SET trang_thai_duan = 'Ngừng hoạt động' WHERE id = :id"),
+		text("UPDATE du_an SET trang_thai_duan = '\u004e\u0067\u1eeb\u006e\u0067 \u0068\u006f\u1ea1\u0074 \u0111\u1ed9\u006e\u0067' WHERE id = :id"),
 		{"id": du_an_id},
 	)
 	db.commit()
 	return {"status": "ok"}
-
 
 crud_router = create_crud_router(DuAn, prefix="", tags=["du_an"])
 router.include_router(crud_router)

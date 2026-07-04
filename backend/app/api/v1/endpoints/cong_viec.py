@@ -1,4 +1,4 @@
-from datetime import date
+﻿from datetime import date
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -54,6 +54,15 @@ class CongViecApproval(BaseModel):
 	ly_do_duyet: Optional[str] = None
 
 
+def _fix_mojibake_text(value: Optional[str]) -> Optional[str]:
+	if not value or not any(marker in value for marker in ("Ã", "Ä", "Æ", "Â", "áº", "á»")):
+		return value
+	try:
+		return value.encode("latin1").decode("utf-8")
+	except (UnicodeEncodeError, UnicodeDecodeError):
+		return value
+
+
 def _normalize_task_value(value):
 	if value is None or value == "":
 		return "(chưa có)"
@@ -64,6 +73,15 @@ def _normalize_task_value(value):
 
 def _is_completed_status(status: Optional[str]) -> bool:
 	return (status or "").strip().lower() in {"\u0111\u00e3 ho\u00e0n th\u00e0nh", "da hoan thanh"}
+
+def _is_inactive_project_status(status: Optional[str]) -> bool:
+	value = (status or "").strip().lower()
+	return (
+		value in {"\u006e\u0067\u1eeb\u006e\u0067 \u0068\u006f\u1ea1\u0074 \u0111\u1ed9\u006e\u0067", "ngung hoat dong"}
+		or "\u006e\u0067\u1eeb\u006e\u0067" in value
+		or "ngung" in value
+		or "ng\u00e1" in value
+	)
 
 def _is_admin(nhan_vien_id: Optional[int], db: Session) -> bool:
 	if nhan_vien_id is None:
@@ -167,6 +185,7 @@ TASK_DISPLAY_STATUS_SQL = """
 	CASE
 		WHEN LOWER(COALESCE(cv.trang_thai_duyet, '')) IN ('\u0111\u00e3 duy\u1ec7t', 'da duyet', 'approved') THEN '\u0110\u00e3 ho\u00e0n th\u00e0nh'
 		WHEN LOWER(COALESCE(cv.trang_thai_duyet, '')) IN ('t\u1eeb ch\u1ed1i', 'tu choi', 'rejected') THEN '\u0110ang th\u1ef1c hi\u1ec7n'
+		WHEN LOWER(COALESCE(cv.trang_thai_duyet, '')) IN ('ch\u1edd duy\u1ec7t', 'cho duyet', 'pending') THEN 'Ch\u1edd duy\u1ec7t'
 		WHEN cv.han_hoan_thanh IS NOT NULL AND cv.han_hoan_thanh < CURDATE() THEN 'Tr\u1ec5 h\u1ea1n'
 		WHEN COALESCE(qt.tong_buoc, 0) = 0 THEN 'Ch\u01b0a b\u1eaft \u0111\u1ea7u'
 		WHEN COALESCE(qt.so_buoc_hoan_thanh, 0) = qt.tong_buoc THEN 'Ch\u1edd duy\u1ec7t'
@@ -332,7 +351,12 @@ def list_task_history(
 		),
 		{"cong_viec_id": cong_viec_id},
 	).mappings().all()
-	return [dict(row) for row in rows]
+	result = []
+	for row in rows:
+		item = dict(row)
+		item["mo_ta_thay_doi"] = _fix_mojibake_text(item.get("mo_ta_thay_doi"))
+		result.append(item)
+	return result
 
 
 @router.post("/{cong_viec_id}/upload_tai_lieu")
@@ -653,11 +677,13 @@ def create_cong_viec(payload: CongViecCreate, db: Session = Depends(get_db)) -> 
 		raise HTTPException(status_code=400, detail="Deadline before today")
 
 	project = db.execute(
-		text("SELECT id, lead_id FROM du_an WHERE id = :id"),
+		text("SELECT id, lead_id, trang_thai_duan FROM du_an WHERE id = :id"),
 		{"id": payload.du_an_id},
 	).mappings().first()
 	if not project:
 		raise HTTPException(status_code=400, detail="Du an not found")
+	if _is_inactive_project_status(project.get("trang_thai_duan")):
+		raise HTTPException(status_code=400, detail="Dự án đã ngưng hoạt động")
 
 	if payload.actor_id is None:
 		raise HTTPException(status_code=400, detail="Missing actor_id")
@@ -781,7 +807,7 @@ def approve_cong_viec(
 	payload: CongViecApproval,
 	db: Session = Depends(get_db),
 ) -> dict:
-	_assert_task_admin(cong_viec_id, payload.nguoi_duyet_id, db)
+	_assert_task_leader_or_admin(cong_viec_id, payload.nguoi_duyet_id, db)
 	_assert_task_pending_approval(cong_viec_id, db)
 	action = (payload.action or "").strip().lower()
 	if action in {"duyet", "approve", "approved"}:

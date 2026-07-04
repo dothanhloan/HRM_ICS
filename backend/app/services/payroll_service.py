@@ -141,11 +141,48 @@ def _standard_work_days(db: Session, nam: int, thang: int, override: Optional[De
     return days if days > 0 else Decimal("24")
 
 
+def _standard_work_dates(db: Session, nam: int, thang: int) -> list[date]:
+    days = []
+    for day in range(1, monthrange(nam, thang)[1] + 1):
+        current_date = date(nam, thang, day)
+        if current_date.weekday() >= 5:
+            continue
+        if _is_holiday(db, current_date):
+            continue
+        days.append(current_date)
+    return days
+
+
+def _leave_work_days(
+    db: Session,
+    leave_start: date,
+    leave_end: date,
+    period_start: date,
+    period_end: date,
+    requested_days: Decimal,
+) -> Decimal:
+    overlap_start = max(leave_start, period_start)
+    overlap_end = min(leave_end, period_end - timedelta(days=1))
+    if overlap_start > overlap_end:
+        return Decimal("0")
+
+    if overlap_start == leave_start and overlap_end == leave_end:
+        return Decimal(str(requested_days))
+
+    days = Decimal("0")
+    current_date = overlap_start
+    while current_date <= overlap_end:
+        if current_date.weekday() < 5 and not _is_holiday(db, current_date):
+            days += Decimal("1")
+        current_date += timedelta(days=1)
+    return min(days, Decimal(str(requested_days)))
+
+
 def _approved_leave_days(db: Session, employee_id: int, start_date: date, end_date: date) -> Decimal:
-    value = db.execute(
+    rows = db.execute(
         text(
             """
-            SELECT COALESCE(SUM(so_ngay), 0)
+            SELECT ngay_bat_dau, ngay_ket_thuc, so_ngay
             FROM don_nghi_phep
             WHERE nhan_vien_id = :employee_id
               AND trang_thai = 'da_duyet'
@@ -154,8 +191,48 @@ def _approved_leave_days(db: Session, employee_id: int, start_date: date, end_da
             """
         ),
         {"employee_id": employee_id, "start_date": start_date, "end_date": end_date},
-    ).scalar() or 0
-    return Decimal(str(value))
+    ).mappings().all()
+    return sum(
+        (
+            _leave_work_days(
+                db,
+                row["ngay_bat_dau"],
+                row["ngay_ket_thuc"],
+                start_date,
+                end_date,
+                Decimal(str(row["so_ngay"] or 0)),
+            )
+            for row in rows
+        ),
+        Decimal("0"),
+    )
+
+
+def _approved_leave_dates(db: Session, employee_id: int, start_date: date, end_date: date) -> set[date]:
+    rows = db.execute(
+        text(
+            """
+            SELECT ngay_bat_dau, ngay_ket_thuc
+            FROM don_nghi_phep
+            WHERE nhan_vien_id = :employee_id
+              AND trang_thai = 'da_duyet'
+              AND ngay_bat_dau < :end_date
+              AND ngay_ket_thuc >= :start_date
+            """
+        ),
+        {"employee_id": employee_id, "start_date": start_date, "end_date": end_date},
+    ).mappings().all()
+
+    dates = set()
+    period_end = end_date - timedelta(days=1)
+    for row in rows:
+        current_date = max(row["ngay_bat_dau"], start_date)
+        leave_end = min(row["ngay_ket_thuc"], period_end)
+        while current_date <= leave_end:
+            if current_date.weekday() < 5 and not _is_holiday(db, current_date):
+                dates.add(current_date)
+            current_date += timedelta(days=1)
+    return dates
 
 
 def _available_annual_leave(db: Session, employee_id: int, nam: int) -> Decimal:
@@ -171,8 +248,19 @@ def _available_annual_leave(db: Session, employee_id: int, nam: int) -> Decimal:
         {"employee_id": employee_id, "nam": nam},
     ).scalar()
     if value is None:
-        return Decimal("1")
+        return Decimal("12")
     return max(Decimal(str(value)), Decimal("0"))
+
+
+def _available_annual_leave_before_period(db: Session, employee_id: int, nam: int, start_date: date) -> Decimal:
+    remaining_leave = _available_annual_leave(db, employee_id, nam)
+    approved_from_period_to_year_end = _approved_leave_days(
+        db,
+        employee_id,
+        start_date,
+        date(nam + 1, 1, 1),
+    )
+    return remaining_leave + approved_from_period_to_year_end
 
 
 def _pit_taxable_income_from_basic_salary(basic_salary: Decimal) -> Decimal:
@@ -254,7 +342,8 @@ def calculate_payroll(
         {"employee_id": employee_id, "start_date": start_date, "end_date": end_date},
     ).mappings().all()
 
-    valid_attendance_days = Decimal("0")
+    standard_work_dates = set(_standard_work_dates(db, nam, thang))
+    present_dates = set()
     late_unapproved = 0
     missing_check_days = Decimal("0")
     for row in attendance_rows:
@@ -262,25 +351,28 @@ def calculate_payroll(
         check_out = _normalize_time(row.get("check_out"))
         explanation_approved = _attendance_report_approved(row.get("bao_cao"))
         has_attendance_action = bool(check_in or check_out)
+        attendance_date = row.get("ngay")
 
         if check_in and check_out:
-            valid_attendance_days += Decimal("1")
+            present_dates.add(attendance_date)
         elif has_attendance_action:
-            if explanation_approved:
-                valid_attendance_days += Decimal("1")
-            else:
-                missing_check_days += Decimal("1")
+            missing_check_days += Decimal("1")
 
         if check_in and check_in > time(8, 6) and not explanation_approved:
             late_unapproved += 1
 
     approved_leave_days = _approved_leave_days(db, employee_id, start_date, end_date)
-    available_leave_days = _available_annual_leave(db, employee_id, nam)
+    approved_leave_dates = _approved_leave_dates(db, employee_id, start_date, end_date)
+    available_leave_days = _available_annual_leave_before_period(db, employee_id, nam, start_date)
     paid_leave_days = min(approved_leave_days, available_leave_days)
     unpaid_leave_days = max(approved_leave_days - available_leave_days, Decimal("0"))
     late_deduct_days = Decimal(str(floor(late_unapproved / 3)))
 
-    actual_work_days = valid_attendance_days + paid_leave_days - late_deduct_days - unpaid_leave_days
+    work_dates_without_paid_leave = standard_work_dates - approved_leave_dates
+    present_work_dates = present_dates & standard_work_dates
+    no_attendance_days = Decimal(str(len(work_dates_without_paid_leave - present_work_dates)))
+    absent_days = no_attendance_days + late_deduct_days
+    actual_work_days = standard_work_days - absent_days - unpaid_leave_days
     actual_work_days = min(max(actual_work_days, Decimal("0")), standard_work_days)
 
     kpi_record = db.execute(
@@ -340,9 +432,10 @@ def calculate_payroll(
     payroll_status = _normalize_payroll_status(trang_thai_thanh_toan)
     today = date.today()
     note = (
-        f"Cycle={thang:02d}/{nam}; Standard={standard_work_days}; Present={valid_attendance_days}; "
+        f"Cycle={thang:02d}/{nam}; Standard={standard_work_days}; Present={len(present_work_dates)}; "
         f"PaidLeave={paid_leave_days}; UnpaidLeave={unpaid_leave_days}; "
-        f"Late={late_unapproved}; LateDeduct={late_deduct_days}; Missing={missing_check_days}; KpiFactor={kpi_factor}; "
+        f"Late={late_unapproved}; LateDeduct={late_deduct_days}; Missing={missing_check_days}; "
+        f"NoAttendance={no_attendance_days}; Absent={absent_days}; KpiFactor={kpi_factor}; "
         f"TaxableIncome={_money(taxable_income)}; PitFixedDeduction={PIT_FIXED_DEDUCTION}; Formula=salary_after_kpi-insurance-tax"
     )
 
