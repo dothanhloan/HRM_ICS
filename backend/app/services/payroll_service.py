@@ -512,6 +512,8 @@ def list_payroll_records(
     thang: Optional[int] = None,
     nam: Optional[int] = None,
     search: Optional[str] = None,
+    employee_name: Optional[str] = None,
+    employee_email: Optional[str] = None,
     payroll_status: Optional[str] = None,
     issue: Optional[str] = None,
     department_id: Optional[int] = None,
@@ -536,8 +538,14 @@ def list_payroll_records(
         where_clauses.append("l.nam = :nam")
         params["nam"] = nam
     if search:
-        where_clauses.append("LOWER(nv.ho_ten) LIKE :search")
+        where_clauses.append("(LOWER(nv.ho_ten) LIKE :search OR LOWER(nv.email) LIKE :search)")
         params["search"] = f"%{search.strip().lower()}%"
+    if employee_name:
+        where_clauses.append("LOWER(nv.ho_ten) LIKE :employee_name")
+        params["employee_name"] = f"%{employee_name.strip().lower()}%"
+    if employee_email:
+        where_clauses.append("LOWER(nv.email) LIKE :employee_email")
+        params["employee_email"] = f"%{employee_email.strip().lower()}%"
     if payroll_status:
         where_clauses.append("l.trang_thai = :payroll_status")
         params["payroll_status"] = payroll_status
@@ -599,7 +607,7 @@ def list_payroll_records(
               l.so_lan_di_muon_khong_duyet, l.so_ngay_tru_di_muon,
               l.so_ngay_thieu_check_in_out, l.so_ngay_nghi_khong_luong,
               l.trang_thai, l.ngay_chot, l.ngay_tra_luong, l.ngay_tao,
-              nv.ho_ten, nv.chuc_vu, nv.phong_ban_id, pb.ten_phong
+              nv.ho_ten, nv.email, nv.chuc_vu, nv.phong_ban_id, pb.ten_phong
             FROM luong l
             LEFT JOIN nhanvien nv ON nv.id = l.nhan_vien_id
             LEFT JOIN phong_ban pb ON pb.id = nv.phong_ban_id

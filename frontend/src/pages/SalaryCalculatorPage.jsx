@@ -6,7 +6,8 @@ function SalaryCalculatorPage({ user, isAdmin }) {
 	const now = new Date();
 	const [month, setMonth] = useState(String(now.getMonth() + 1));
 	const [year, setYear] = useState(String(now.getFullYear()));
-	const [search, setSearch] = useState("");
+	const [employeeName, setEmployeeName] = useState("");
+	const [employeeEmail, setEmployeeEmail] = useState("");
 	const [rows, setRows] = useState([]);
 	const [total, setTotal] = useState(0);
 	const [page, setPage] = useState(1);
@@ -44,7 +45,8 @@ function SalaryCalculatorPage({ user, isAdmin }) {
 				page: String(page),
 				page_size: String(pageSize),
 			});
-			if (canManage && search.trim()) params.set("search", search.trim());
+			if (canManage && employeeName.trim()) params.set("employee_name", employeeName.trim());
+			if (canManage && employeeEmail.trim()) params.set("employee_email", employeeEmail.trim());
 
 			const response = await fetch(`${API_BASE}/api/v1/luong_tinh_toan/danh_sach?${params.toString()}`);
 			const data = await response.json();
@@ -64,7 +66,7 @@ function SalaryCalculatorPage({ user, isAdmin }) {
 	useEffect(() => {
 		fetchData();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [user?.id, actorRole, month, year, page, canManage]);
+	}, [user?.id, actorRole, month, year, page, canManage, employeeName, employeeEmail]);
 
 	const exportPayroll = async () => {
 		setActionLoading(true);
@@ -182,7 +184,8 @@ function SalaryCalculatorPage({ user, isAdmin }) {
 					</div>
 					<div className="header-actions">
 						<div className="admin-actions task-filters">
-							{canManage ? <input type="search" placeholder="Lọc theo tên nhân viên..." value={search} onChange={(event) => setSearch(event.target.value)} /> : null}
+							{canManage ? <input type="search" placeholder="Lọc theo họ tên..." value={employeeName} onChange={(event) => { setPage(1); setEmployeeName(event.target.value); }} /> : null}
+							{canManage ? <input type="search" placeholder="Lọc theo email..." value={employeeEmail} onChange={(event) => { setPage(1); setEmployeeEmail(event.target.value); }} /> : null}
 							<input type="number" min="1" max="12" value={month} onChange={(event) => { setPage(1); setMonth(event.target.value); }} />
 							<input type="number" min="2000" max="2100" value={year} onChange={(event) => { setPage(1); setYear(event.target.value); }} />
 							<button type="button" onClick={() => fetchData()} disabled={loading}>{loading ? "Đang tải..." : "Làm mới"}</button>
@@ -291,6 +294,7 @@ function SalaryCalculatorPage({ user, isAdmin }) {
 						<div className="payroll-detail-grid">
 							<DetailBox title="Thông tin chung" items={[
 								["Nhân viên", selectedPayslip.ho_ten],
+								["Email", selectedPayslip.email || "-"],
 								["Phòng ban", selectedPayslip.ten_phong || "-"],
 								["Trạng thái", payrollStatusLabel(selectedPayslip.trang_thai)],
 							]} />

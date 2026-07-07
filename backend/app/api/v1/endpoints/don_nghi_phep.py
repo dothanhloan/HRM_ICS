@@ -1,5 +1,5 @@
 import calendar
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.api.deps import get_db
 from app.api.v1.endpoints.crud_factory import create_crud_router
-from app.models.generated import DonNghiPhep, LichSuCongPhep, NgayPhepNam, Nhanvien, PhongBan
+from app.models.generated import DonNghiPhep, LichSuCongPhep, NgayNghiLe, NgayPhepNam, Nhanvien, PhongBan
 
 router = APIRouter(prefix="/don_nghi_phep", tags=["don_nghi_phep"])
 crud_router = create_crud_router(DonNghiPhep, prefix="", tags=["don_nghi_phep"])
@@ -34,6 +34,44 @@ def _parse_date(value: str, field: str) -> date:
 def _calculate_days(start: date, end: date) -> Decimal:
 	diff = (end - start).days + 1
 	return Decimal(str(max(diff, 0)))
+
+def _annual_holiday_range_in_year(holiday_start: date, holiday_end: date, year: int) -> tuple[date, date]:
+	start = date(year, holiday_start.month, holiday_start.day)
+	end_year = year if (holiday_end.month, holiday_end.day) >= (holiday_start.month, holiday_start.day) else year + 1
+	end = date(end_year, holiday_end.month, holiday_end.day)
+	return start, end
+
+def _validate_leave_working_days(db: Session, start: date, end: date) -> None:
+	holidays = (
+		db.query(NgayNghiLe)
+		.filter(
+			sa.or_(
+				NgayNghiLe.lap_lai_hang_nam.is_(True),
+				sa.and_(NgayNghiLe.ngay_bat_dau <= end, NgayNghiLe.ngay_ket_thuc >= start),
+			)
+		)
+		.all()
+	)
+
+	current_date = start
+	while current_date <= end:
+		if current_date.weekday() >= 5:
+			raise HTTPException(status_code=400, detail="Leave dates cannot include Saturday or Sunday")
+
+		for holiday in holidays:
+			if holiday.lap_lai_hang_nam:
+				for year in (current_date.year - 1, current_date.year):
+					holiday_start, holiday_end = _annual_holiday_range_in_year(
+						holiday.ngay_bat_dau,
+						holiday.ngay_ket_thuc,
+						year,
+					)
+					if holiday_start <= current_date <= holiday_end:
+						raise HTTPException(status_code=400, detail="Leave dates cannot include holidays")
+			elif holiday.ngay_bat_dau <= current_date <= holiday.ngay_ket_thuc:
+				raise HTTPException(status_code=400, detail="Leave dates cannot include holidays")
+
+		current_date += timedelta(days=1)
 
 def _add_months(value: date, months: int) -> date:
 	month_index = value.month - 1 + months
@@ -151,8 +189,11 @@ def submit_leave(payload: LeaveSubmitPayload, db: Session = Depends(get_db)) -> 
 
 	start_date = _parse_date(payload.ngay_bat_dau, "ngay_bat_dau")
 	end_date = _parse_date(payload.ngay_ket_thuc, "ngay_ket_thuc")
+	if start_date < date.today():
+		raise HTTPException(status_code=400, detail="Thời gian nghỉ phép không hợp lệ")
 	if end_date < start_date:
 		raise HTTPException(status_code=400, detail="Invalid date range")
+	_validate_leave_working_days(db, start_date, end_date)
 
 	so_ngay = _calculate_days(start_date, end_date)
 	item = DonNghiPhep(
